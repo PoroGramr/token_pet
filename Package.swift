@@ -9,7 +9,8 @@ let package = Package(
         .executable(name: "TokenPet", targets: ["TokenPet"]),
         .executable(name: "TokenPetFramePrep", targets: ["TokenPetFramePrep"]),
         .executable(name: "TokenPetServiceTests", targets: ["TokenPetServiceTests"]),
-        .executable(name: "TokenPetCoreTests", targets: ["TokenPetCoreTests"])
+        .executable(name: "TokenPetCoreTests", targets: ["TokenPetCoreTests"]),
+        .executable(name: "TokenPetCharacterStoreTests", targets: ["TokenPetCharacterStoreTests"])
     ],
     targets: [
         .target(name: "TokenPetCore"),
@@ -24,6 +25,11 @@ let package = Package(
             name: "TokenPetCoreTests",
             dependencies: ["TokenPetCore"],
             path: "Tests/TokenPetCoreTests"
+        ),
+        .executableTarget(
+            name: "TokenPetCharacterStoreTests",
+            dependencies: ["TokenPetCore"],
+            path: "Tests/TokenPetCharacterStoreTests"
         )
     ]
 )
