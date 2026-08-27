@@ -242,6 +242,24 @@ private func testCharacterProfileAndPercentLayoutContracts() throws {
     invalidFrames.frameCount = 5
     runner.expectTrue(!CharacterProfileValidator.validate(invalidFrames, existingNames: []).isEmpty, "five user frames rejected")
 
+    var negativeFrameCount = threeFrame
+    negativeFrameCount.frameCount = -1
+    runner.expectEqual(
+        CharacterProfileValidator.validate(negativeFrameCount, existingNames: []),
+        ["frameCount", "frameOrder"],
+        "negative frame count returns validation errors without trapping"
+    )
+
+    var enormousFrameCount = threeFrame
+    enormousFrameCount.frameCount = .max
+    let enormousJSON = try JSONEncoder().encode(enormousFrameCount)
+    let decodedEnormous = try JSONDecoder().decode(CharacterProfile.self, from: enormousJSON)
+    runner.expectEqual(
+        CharacterProfileValidator.validate(decodedEnormous, existingNames: []),
+        ["frameCount", "frameOrder"],
+        "Int.max frame count JSON returns validation errors without allocating"
+    )
+
     var reordered = threeFrame
     reordered.frameOrder = [2, 0, 1]
     runner.expectTrue(CharacterProfileValidator.validate(reordered, existingNames: []).isEmpty, "valid reordered permutation accepted")
@@ -526,6 +544,49 @@ private func testEditorRefreshRecoversPersistedSelectionAfterCatalogFailure() {
 }
 
 @MainActor
+private func testEditorDiscardTransitionsPreserveDirtyDraftUntilReplacementLoads() {
+    let currentID = UUID(uuidString: "99999999-9999-9999-9999-999999999999")!
+    let targetID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+    let current = CharacterEditorDraftState(selectedID: currentID, draftID: currentID, isDirty: true)
+
+    let failedSwitch = CharacterEditorStateTransitions.afterSelectionAttempt(
+        current: current,
+        loadedSelection: nil
+    )
+    runner.expectEqual(failedSwitch, current, "failed target load preserves selected draft and dirty state")
+
+    let successfulSwitch = CharacterEditorStateTransitions.afterSelectionAttempt(
+        current: current,
+        loadedSelection: .draft(targetID)
+    )
+    runner.expectEqual(
+        successfulSwitch,
+        CharacterEditorDraftState(selectedID: targetID, draftID: targetID, isDirty: false),
+        "successful target load installs a clean draft"
+    )
+
+    let newDraft = CharacterEditorStateTransitions.afterCreatingDraft(current: current, newDraftID: targetID)
+    runner.expectEqual(
+        newDraft,
+        CharacterEditorDraftState(selectedID: targetID, draftID: targetID, isDirty: true),
+        "approved create path starts a new dirty draft"
+    )
+
+    let failedClose = CharacterEditorStateTransitions.afterCloseReload(current: current, reloaded: nil)
+    runner.expectEqual(failedClose.state, current, "failed close reload preserves dirty draft")
+    runner.expectEqual(failedClose.shouldClose, false, "failed close reload keeps window open")
+
+    let cleanBuiltIn = CharacterEditorDraftState(
+        selectedID: CharacterStore.builtInCharacterID,
+        draftID: nil,
+        isDirty: false
+    )
+    let successfulClose = CharacterEditorStateTransitions.afterCloseReload(current: current, reloaded: cleanBuiltIn)
+    runner.expectEqual(successfulClose.state, cleanBuiltIn, "successful close reload installs clean snapshot")
+    runner.expectEqual(successfulClose.shouldClose, true, "successful close reload permits close")
+}
+
+@MainActor
 private func testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames() throws {
     for path in ["img/2.png", "img/3.png"] {
         let image = try FrameImageProcessor.makeTransparentImage(from: Data(contentsOf: URL(fileURLWithPath: path)))
@@ -566,6 +627,8 @@ private func testReversibleFrameProcessingPreservesSourceUntilDisplayRemoval() t
 
     runner.expectEqual(alphaValue(in: try decodePNG(preserved), x: 0, y: 0), 0, "aspect-fit margin preserved")
     runner.expectEqual(alphaValue(in: try decodePNG(removed), x: 0, y: 0), 0, "background removed")
+    runner.expectEqual(alphaValue(in: try decodePNG(preserved), x: 10, y: 120), 255, "light source area remains opaque when removal is off")
+    runner.expectEqual(alphaValue(in: try decodePNG(removed), x: 10, y: 120), 0, "connected light source area becomes transparent when removal is on")
 }
 
 @MainActor
@@ -646,6 +709,105 @@ private func makeOpaqueJPEGFixture() throws -> Data {
         throw FrameImageError.invalidImage
     }
     return output as Data
+}
+
+private func makeOrientedJPEGFixture(orientation: Int) throws -> Data {
+    let width = 80
+    let height = 40
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    guard let context = CGContext(
+        data: &pixels,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
+        throw FrameImageError.contextCreationFailed
+    }
+    context.setFillColor(CGColor(red: 0.05, green: 0.2, blue: 0.65, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    context.setFillColor(CGColor(red: 0.95, green: 0.05, blue: 0.05, alpha: 1))
+    context.fill(CGRect(x: 0, y: 20, width: 20, height: 20))
+    guard let image = context.makeImage() else {
+        throw FrameImageError.invalidImage
+    }
+    let output = NSMutableData()
+    guard let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else {
+        throw FrameImageError.invalidImage
+    }
+    let properties: [CFString: Any] = [
+        kCGImageDestinationLossyCompressionQuality: 1.0,
+        kCGImagePropertyOrientation: orientation
+    ]
+    CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+    guard CGImageDestinationFinalize(destination) else {
+        throw FrameImageError.invalidImage
+    }
+    return output as Data
+}
+
+private func redMarkerCentroid(in image: CGImage) -> CGPoint? {
+    let bytesPerRow = image.width * 4
+    var pixels = [UInt8](repeating: 0, count: bytesPerRow * image.height)
+    let context = CGContext(
+        data: &pixels,
+        width: image.width,
+        height: image.height,
+        bitsPerComponent: 8,
+        bytesPerRow: bytesPerRow,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    )!
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    var xTotal = 0
+    var yTotal = 0
+    var count = 0
+    for y in 0..<image.height {
+        for x in 0..<image.width {
+            let offset = y * bytesPerRow + x * 4
+            if pixels[offset] > 180, pixels[offset + 1] < 80, pixels[offset + 2] < 80 {
+                xTotal += x
+                yTotal += y
+                count += 1
+            }
+        }
+    }
+    guard count > 0 else { return nil }
+    return CGPoint(x: xTotal / count, y: yTotal / count)
+}
+
+@MainActor
+private func testAppliesJPEGEXIFOrientationBeforeAspectFit() throws {
+    let orientation6 = try decodePNG(
+        FrameImageProcessor.makeNormalizedSourcePNG(
+            from: makeOrientedJPEGFixture(orientation: 6),
+            pixelSize: 240
+        )
+    )
+    let orientation8 = try decodePNG(
+        FrameImageProcessor.makeNormalizedSourcePNG(
+            from: makeOrientedJPEGFixture(orientation: 8),
+            pixelSize: 240
+        )
+    )
+
+    for (image, label) in [(orientation6, "orientation 6"), (orientation8, "orientation 8")] {
+        runner.expectEqual(alphaValue(in: image, x: 20, y: 120), 0, "\(label) creates horizontal margin after vertical rotation")
+        runner.expectEqual(alphaValue(in: image, x: 120, y: 20), 255, "\(label) fills vertical extent after rotation")
+    }
+
+    let marker6 = redMarkerCentroid(in: orientation6)
+    let marker8 = redMarkerCentroid(in: orientation8)
+    runner.expectTrue(
+        marker6.map { $0.x > 120 && $0.y < 120 } == true,
+        "orientation 6 rotates upper-left marker to upper-right (actual: \(String(describing: marker6)))"
+    )
+    runner.expectTrue(
+        marker8.map { $0.x < 120 && $0.y > 120 } == true,
+        "orientation 8 rotates upper-left marker to lower-left (actual: \(String(describing: marker8)))"
+    )
 }
 
 @MainActor
@@ -772,11 +934,13 @@ do {
     testShowsCharacterRefreshErrorsInCurrentMenuOpening()
     testReconcilesRuntimeDisplayWithoutLosingPersistedSelection()
     testEditorRefreshRecoversPersistedSelectionAfterCatalogFailure()
+    testEditorDiscardTransitionsPreserveDirtyDraftUntilReplacementLoads()
     try testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames()
     try testPreservesExistingTransparency()
     try testPreparesNormalizedTransparentBundleFrames()
     try testReversibleFrameProcessingPreservesSourceUntilDisplayRemoval()
     try testReversibleProcessingHandlesNonSquareJPEGAndAlphaPNG()
+    try testAppliesJPEGEXIFOrientationBeforeAspectFit()
     testPositionsPanelAtBottomRightAndClampsOffscreenOrigin()
     testMapsUsageStatesToWidgetPresentation()
     try testScreenshotCharacterIsUprightIfRequested()

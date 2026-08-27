@@ -1,6 +1,9 @@
 import Darwin
+import CoreGraphics
 import Foundation
+import ImageIO
 import TokenPetCore
+import UniformTypeIdentifiers
 
 private final class TestRunner {
     private(set) var failures = 0
@@ -45,6 +48,25 @@ private final class ReplacementFailureBoundary: @unchecked Sendable, CharacterSt
     }
 }
 
+private final class TargetMovedToBackupThenFailureBoundary: @unchecked Sendable, CharacterStoreCommitBoundary {
+    func replaceItem(at targetURL: URL, withStagingItemAt stagingURL: URL, backupItemURL: URL) throws {
+        try FileManager.default.moveItem(at: targetURL, to: backupItemURL)
+        throw InjectedCommitError.replacement
+    }
+
+    func removeOldBackup(at backupURL: URL) throws {}
+}
+
+private final class ReplacementInstalledThenFailureBoundary: @unchecked Sendable, CharacterStoreCommitBoundary {
+    func replaceItem(at targetURL: URL, withStagingItemAt stagingURL: URL, backupItemURL: URL) throws {
+        try FileManager.default.moveItem(at: targetURL, to: backupItemURL)
+        try FileManager.default.moveItem(at: stagingURL, to: targetURL)
+        throw InjectedCommitError.replacement
+    }
+
+    func removeOldBackup(at backupURL: URL) throws {}
+}
+
 private final class CleanupFailureBoundary: @unchecked Sendable, CharacterStoreCommitBoundary {
     func replaceItem(at targetURL: URL, withStagingItemAt stagingURL: URL, backupItemURL: URL) throws {
         _ = try FileManager.default.replaceItemAt(
@@ -59,6 +81,42 @@ private final class CleanupFailureBoundary: @unchecked Sendable, CharacterStoreC
         throw InjectedCommitError.cleanup
     }
 }
+
+private func makeImageFixture(
+    type: UTType,
+    pixelSize: Int,
+    red: UInt8,
+    green: UInt8,
+    blue: UInt8
+) -> Data {
+    var pixels = [UInt8](repeating: 0, count: pixelSize * pixelSize * 4)
+    for offset in stride(from: 0, to: pixels.count, by: 4) {
+        pixels[offset] = red
+        pixels[offset + 1] = green
+        pixels[offset + 2] = blue
+        pixels[offset + 3] = 255
+    }
+    let context = CGContext(
+        data: &pixels,
+        width: pixelSize,
+        height: pixelSize,
+        bitsPerComponent: 8,
+        bytesPerRow: pixelSize * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    )!
+    let output = NSMutableData()
+    let destination = CGImageDestinationCreateWithData(output, type.identifier as CFString, 1, nil)!
+    CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+    precondition(CGImageDestinationFinalize(destination))
+    return output as Data
+}
+
+private let sourcePNG = makeImageFixture(type: .png, pixelSize: 240, red: 30, green: 80, blue: 160)
+private let displayPNG = makeImageFixture(type: .png, pixelSize: 240, red: 60, green: 130, blue: 210)
+private let replacementPNG = makeImageFixture(type: .png, pixelSize: 240, red: 170, green: 40, blue: 90)
+private let onePixelPNG = makeImageFixture(type: .png, pixelSize: 1, red: 20, green: 40, blue: 60)
+private let jpegData = makeImageFixture(type: .jpeg, pixelSize: 240, red: 90, green: 120, blue: 180)
 
 private func makeProfile(id: UUID = UUID(), name: String = "Mochi") -> CharacterProfile {
     CharacterProfile(
@@ -75,8 +133,8 @@ private func makeProfile(id: UUID = UUID(), name: String = "Mochi") -> Character
 }
 
 private func makeAssets(profile: CharacterProfile) -> CharacterAssets {
-    let sourceFrames = [Data("source-0".utf8), Data("source-1".utf8), Data("source-2".utf8)]
-    let displayFrames = [Data("frame-0".utf8), Data("frame-1".utf8), Data("frame-2".utf8)]
+    let sourceFrames = [sourcePNG, sourcePNG, sourcePNG]
+    let displayFrames = [displayPNG, displayPNG, displayPNG]
     return CharacterAssets(profile: profile, sources: sourceFrames, frames: displayFrames)
 }
 
@@ -119,6 +177,10 @@ private func writeAssets(_ assets: CharacterAssets, to directory: URL) throws {
     for index in assets.frames.indices {
         try assets.frames[index].write(to: directory.appendingPathComponent("frame-\(index + 1).png"))
     }
+}
+
+private func backupURL(for id: UUID, root: URL) -> URL {
+    root.appendingPathComponent(".backup-\(id.uuidString)-\(UUID().uuidString)", isDirectory: true)
 }
 
 private func testSavesLoadsListsAndClearsSelection() throws {
@@ -236,6 +298,82 @@ private func testRejectsExtraFilesAndSymlinks() throws {
     if runner.failures > 0 { exit(1) }
 }
 
+private func testRejectsDamagedWrongSizedAndMasqueradingImagesAtEveryStoreBoundary() throws {
+    let runner = TestRunner()
+    let invalidImages: [(String, Data)] = [
+        ("damaged", Data("not-an-image".utf8)),
+        ("1x1", onePixelPNG),
+        ("JPEG masquerading as PNG", jpegData)
+    ]
+
+    for (label, invalidData) in invalidImages {
+        for isSource in [true, false] {
+            try withStore { store, root, _ in
+                let profile = makeProfile()
+                let original = makeAssets(profile: profile)
+                try store.save(original)
+                let target = root.appendingPathComponent(profile.id.uuidString)
+                let before = try onDiskSnapshot(target, frameCount: profile.frameCount)
+                var invalidReplacement = original
+                if isSource {
+                    invalidReplacement.sources[0] = invalidData
+                } else {
+                    invalidReplacement.frames[0] = invalidData
+                }
+
+                expectThrows(
+                    { try store.save(invalidReplacement) },
+                    "\(label) \(isSource ? "source" : "display") rejected during save staging validation",
+                    runner: runner
+                )
+                runner.expectEqual(
+                    try onDiskSnapshot(target, frameCount: profile.frameCount),
+                    before,
+                    "\(label) rejected replacement preserves existing bytes"
+                )
+            }
+
+            try withStore { store, root, _ in
+                let profile = makeProfile()
+                let original = makeAssets(profile: profile)
+                try store.save(original)
+                let filename = isSource ? "source-1.png" : "frame-1.png"
+                try invalidData.write(
+                    to: root.appendingPathComponent(profile.id.uuidString).appendingPathComponent(filename),
+                    options: .atomic
+                )
+
+                runner.expectEqual(
+                    try store.list(),
+                    [],
+                    "\(label) \(isSource ? "source" : "display") excluded from list"
+                )
+                expectThrows(
+                    { _ = try store.load(id: profile.id) },
+                    "\(label) \(isSource ? "source" : "display") rejected during load",
+                    runner: runner
+                )
+            }
+        }
+    }
+
+    try withStore { store, root, _ in
+        let profile = makeProfile()
+        try store.save(makeAssets(profile: profile))
+        store.selectedCharacterID = profile.id
+        try Data("not-an-image".utf8).write(
+            to: root.appendingPathComponent(profile.id.uuidString).appendingPathComponent("frame-1.png"),
+            options: .atomic
+        )
+        let builtInProfile = makeProfile(id: CharacterStore.builtInCharacterID, name: "Built In")
+        let snapshot = try CharacterMenuResolver(catalog: store, builtInProfile: builtInProfile).presentation()
+        runner.expectEqual(snapshot.selectedID, CharacterStore.builtInCharacterID, "corrupt selected profile falls back to built-in")
+        runner.expectEqual(store.selectedCharacterID, nil, "corrupt selected profile clears persisted selection after fallback")
+    }
+
+    if runner.failures > 0 { exit(1) }
+}
+
 private func testCommitFailurePreservesExistingTargetAndCleansStaging() throws {
     let runner = TestRunner()
     try withStore { store, root, defaults in
@@ -246,7 +384,7 @@ private func testCommitFailurePreservesExistingTargetAndCleansStaging() throws {
         let before = try onDiskSnapshot(target, frameCount: profile.frameCount)
 
         var replacement = original
-        replacement.frames[0] = Data("replacement-frame".utf8)
+        replacement.frames[0] = replacementPNG
         let failingStore = CharacterStore(rootURL: root, defaults: defaults, commitBoundary: ReplacementFailureBoundary())
         expectThrows({ try failingStore.save(replacement) }, "injected commit failure rejected", runner: runner)
 
@@ -254,6 +392,97 @@ private func testCommitFailurePreservesExistingTargetAndCleansStaging() throws {
         let rootEntries = try FileManager.default.contentsOfDirectory(atPath: root.path)
         runner.expectTrue(!rootEntries.contains(where: { $0.hasPrefix(".staging-") }), "commit failure cleans staging")
     }
+    if runner.failures > 0 { exit(1) }
+}
+
+private func testCommitFailureRestoresBackupAfterTargetWasMoved() throws {
+    let runner = TestRunner()
+    for boundary in [
+        TargetMovedToBackupThenFailureBoundary() as any CharacterStoreCommitBoundary,
+        ReplacementInstalledThenFailureBoundary() as any CharacterStoreCommitBoundary
+    ] {
+        try withStore { store, root, defaults in
+            let profile = makeProfile()
+            let original = makeAssets(profile: profile)
+            try store.save(original)
+            let target = root.appendingPathComponent(profile.id.uuidString)
+            let before = try onDiskSnapshot(target, frameCount: profile.frameCount)
+
+            var replacement = original
+            replacement.sources[0] = replacementPNG
+            replacement.frames[0] = replacementPNG
+            let failingStore = CharacterStore(rootURL: root, defaults: defaults, commitBoundary: boundary)
+            expectThrows({ try failingStore.save(replacement) }, "post-move commit failure rejected", runner: runner)
+
+            runner.expectEqual(
+                try onDiskSnapshot(target, frameCount: profile.frameCount),
+                before,
+                "post-move commit failure restores original bytes"
+            )
+            runner.expectEqual(try store.load(id: profile.id), original, "post-move failure restores loadable original assets")
+            let rootEntries = try FileManager.default.contentsOfDirectory(atPath: root.path)
+            runner.expectTrue(!rootEntries.contains(where: { $0.hasPrefix(".backup-") }), "restored commit failure consumes backup")
+            runner.expectTrue(!rootEntries.contains(where: { $0.hasPrefix(".staging-") }), "restored commit failure cleans staging")
+        }
+    }
+    if runner.failures > 0 { exit(1) }
+}
+
+private func testStartupRecoveryUsesOnlyValidExpectedBackups() throws {
+    let runner = TestRunner()
+
+    try withStore { store, root, _ in
+        let profile = makeProfile()
+        let current = makeAssets(profile: profile)
+        try store.save(current)
+        let target = root.appendingPathComponent(profile.id.uuidString)
+        let oldBackup = backupURL(for: profile.id, root: root)
+        try FileManager.default.copyItem(at: target, to: oldBackup)
+
+        runner.expectEqual(try store.list().map(\.id), [profile.id], "valid target remains authoritative during startup recovery")
+        runner.expectTrue(!FileManager.default.fileExists(atPath: oldBackup.path), "valid target allows valid old backup cleanup")
+        runner.expectEqual(try store.load(id: profile.id), current, "valid target bytes remain unchanged")
+    }
+
+    try withStore { store, root, _ in
+        let profile = makeProfile()
+        let original = makeAssets(profile: profile)
+        let orphanBackup = backupURL(for: profile.id, root: root)
+        try writeAssets(original, to: orphanBackup)
+
+        runner.expectEqual(try store.list().map(\.id), [profile.id], "missing target is restored from valid backup")
+        runner.expectEqual(try store.load(id: profile.id), original, "restored backup preserves original assets")
+        runner.expectTrue(!FileManager.default.fileExists(atPath: orphanBackup.path), "restored backup moves back to target")
+    }
+
+    try withStore { store, root, _ in
+        let profile = makeProfile()
+        let original = makeAssets(profile: profile)
+        try store.save(original)
+        let target = root.appendingPathComponent(profile.id.uuidString)
+        let orphanBackup = backupURL(for: profile.id, root: root)
+        try FileManager.default.copyItem(at: target, to: orphanBackup)
+        try Data("damaged-current-target".utf8).write(
+            to: target.appendingPathComponent("frame-1.png"),
+            options: .atomic
+        )
+
+        runner.expectEqual(try store.list().map(\.id), [profile.id], "invalid target is restored from valid backup")
+        runner.expectEqual(try store.load(id: profile.id), original, "valid backup supersedes invalid target")
+        runner.expectTrue(!FileManager.default.fileExists(atPath: orphanBackup.path), "recovered valid backup no longer remains orphaned")
+    }
+
+    try withStore { store, root, _ in
+        let profile = makeProfile()
+        var invalidBackup = makeAssets(profile: profile)
+        invalidBackup.frames[0] = Data("damaged-backup".utf8)
+        let orphanBackup = backupURL(for: profile.id, root: root)
+        try writeAssets(invalidBackup, to: orphanBackup)
+
+        runner.expectEqual(try store.list(), [], "invalid backup is never promoted")
+        runner.expectTrue(FileManager.default.fileExists(atPath: orphanBackup.path), "invalid backup is retained to avoid data loss")
+    }
+
     if runner.failures > 0 { exit(1) }
 }
 
@@ -265,7 +494,7 @@ private func testCleanupFailureKeepsCommittedReplacement() throws {
         try store.save(original)
 
         var replacement = original
-        replacement.sources[0] = Data("replacement-source".utf8)
+        replacement.sources[0] = replacementPNG
         let cleanupFailureStore = CharacterStore(rootURL: root, defaults: defaults, commitBoundary: CleanupFailureBoundary())
         try cleanupFailureStore.save(replacement)
 
@@ -331,13 +560,12 @@ private func testCharacterDraftNormalizesStoredFrameOrderExactlyOnce() {
 
 private func testRuntimeValidationRejectsDamagedFrameBeforePersistence() throws {
     let runner = TestRunner()
-    let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
     try withStore { store, _, _ in
         let profile = makeProfile()
         let original = CharacterAssets(
             profile: profile,
-            sources: [png, png, png],
-            frames: [png, png, png]
+            sources: [sourcePNG, sourcePNG, sourcePNG],
+            frames: [displayPNG, displayPNG, displayPNG]
         )
         try store.save(original)
 
@@ -360,7 +588,10 @@ do {
     try testSkipsCorruptProfilesAndPreservesExistingAssetsOnRejectedReplacement()
     try testRejectsReservedBuiltInProfileMutationsAndLoads()
     try testRejectsExtraFilesAndSymlinks()
+    try testRejectsDamagedWrongSizedAndMasqueradingImagesAtEveryStoreBoundary()
     try testCommitFailurePreservesExistingTargetAndCleansStaging()
+    try testCommitFailureRestoresBackupAfterTargetWasMoved()
+    try testStartupRecoveryUsesOnlyValidExpectedBackups()
     try testCleanupFailureKeepsCommittedReplacement()
     testCharacterDraftReordersAndValidates()
     testCharacterDraftNormalizesStoredFrameOrderExactlyOnce()

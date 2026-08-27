@@ -28,6 +28,9 @@ final class CharacterManagerModel: ObservableObject {
     }
 
     var isBuiltInSelected: Bool { selectedID == CharacterRepository.builtInID }
+    var editorState: CharacterEditorDraftState {
+        CharacterEditorDraftState(selectedID: selectedID, draftID: draft?.id, isDirty: isDirty)
+    }
     var canDeleteSelected: Bool {
         guard let selectedID, selectedID != CharacterRepository.builtInID else { return false }
         return profiles.contains { $0.id == selectedID }
@@ -41,10 +44,14 @@ final class CharacterManagerModel: ObservableObject {
     func createCharacter() {
         guard confirmDiscardIfNeeded() else { return }
         let newDraft = CharacterDraft.new()
-        selectedID = newDraft.id
+        let nextState = CharacterEditorStateTransitions.afterCreatingDraft(
+            current: editorState,
+            newDraftID: newDraft.id
+        )
+        selectedID = nextState.selectedID
         draft = newDraft
         errorMessage = nil
-        isDirty = true
+        isDirty = nextState.isDirty
     }
 
     func selectProfile(id: UUID) {
@@ -226,14 +233,14 @@ final class CharacterManagerModel: ObservableObject {
         }
     }
 
-    func cancelChanges() {
+    @discardableResult
+    func cancelChanges() -> Bool {
         reloadProfiles()
     }
 
     private func confirmDiscardIfNeeded() -> Bool {
         guard isDirty else { return true }
         guard confirmDiscard?() ?? true else { return false }
-        isDirty = false
         return true
     }
 
@@ -259,26 +266,43 @@ final class CharacterManagerModel: ObservableObject {
             builtInID: CharacterRepository.builtInID,
             catalog: .available(Set(profiles.map(\.id)))
         ) ?? CharacterRepository.builtInID
-        loadSelection(id: targetID)
-        return true
+        return loadSelection(id: targetID)
     }
 
-    private func loadSelection(id: UUID) {
+    @discardableResult
+    private func loadSelection(id: UUID) -> Bool {
+        let currentState = editorState
         guard id != CharacterRepository.builtInID else {
-            selectedID = id
+            let nextState = CharacterEditorStateTransitions.afterSelectionAttempt(
+                current: currentState,
+                loadedSelection: .builtIn(id)
+            )
+            selectedID = nextState.selectedID
             draft = nil
             errorMessage = nil
-            isDirty = false
-            return
+            isDirty = nextState.isDirty
+            return true
         }
         do {
             let loadedDraft = CharacterDraft(assets: try store.load(id: id))
-            selectedID = id
+            let nextState = CharacterEditorStateTransitions.afterSelectionAttempt(
+                current: currentState,
+                loadedSelection: .draft(id)
+            )
+            selectedID = nextState.selectedID
             draft = loadedDraft
             errorMessage = nil
-            isDirty = false
+            isDirty = nextState.isDirty
+            return true
         } catch {
+            let preservedState = CharacterEditorStateTransitions.afterSelectionAttempt(
+                current: currentState,
+                loadedSelection: nil
+            )
+            selectedID = preservedState.selectedID
+            isDirty = preservedState.isDirty
             errorMessage = "캐릭터 데이터를 불러오지 못했습니다. 기존 편집 상태를 유지합니다."
+            return false
         }
     }
 

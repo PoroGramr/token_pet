@@ -28,7 +28,21 @@ public enum FrameImageProcessor {
         guard pixelSize > 0 else { throw FrameImageError.invalidImage }
         guard
             let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
-            let sourceImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+            let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int,
+            width > 0,
+            height > 0,
+            let sourceImage = CGImageSourceCreateThumbnailAtIndex(
+                imageSource,
+                0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+                    kCGImageSourceShouldCacheImmediately: true
+                ] as CFDictionary
+            )
         else {
             throw FrameImageError.invalidImage
         }

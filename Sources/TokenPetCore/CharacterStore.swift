@@ -91,7 +91,7 @@ public final class CharacterStore: @unchecked Sendable {
         guard fileManager.fileExists(atPath: rootURL.path) else { return [] }
         do {
             let root = try checkedRoot(createIfMissing: false)
-            removeOrphanedBackups(in: root)
+            recoverOrphanedBackups(in: root)
             let entries = try fileManager.contentsOfDirectory(
                 at: root,
                 includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
@@ -140,7 +140,7 @@ public final class CharacterStore: @unchecked Sendable {
 
         do {
             let root = try checkedRoot(createIfMissing: true)
-            removeOrphanedBackups(in: root)
+            recoverOrphanedBackups(in: root)
             let targetURL = directoryURL(for: assets.profile.id, root: root)
             if fileManager.fileExists(atPath: targetURL.path) {
                 try checkedProfileDirectory(targetURL, inside: root)
@@ -159,7 +159,17 @@ public final class CharacterStore: @unchecked Sendable {
 
             let targetExisted = fileManager.fileExists(atPath: targetURL.path)
             let backupURL = root.appendingPathComponent(".backup-\(assets.profile.id.uuidString)-\(UUID().uuidString)", isDirectory: true)
-            try commitBoundary.replaceItem(at: targetURL, withStagingItemAt: stagingURL, backupItemURL: backupURL)
+            do {
+                try commitBoundary.replaceItem(at: targetURL, withStagingItemAt: stagingURL, backupItemURL: backupURL)
+            } catch {
+                restoreBackupAfterFailedCommit(
+                    at: backupURL,
+                    to: targetURL,
+                    expectedID: assets.profile.id,
+                    root: root
+                )
+                throw error
+            }
             stagingNeedsCleanup = false
             if targetExisted { try? commitBoundary.removeOldBackup(at: backupURL) }
         } catch let error as CharacterStoreError {
@@ -236,7 +246,9 @@ public final class CharacterStore: @unchecked Sendable {
             let frames = try (1...profile.frameCount).map {
                 try readRegularFile(directoryURL.appendingPathComponent("frame-\($0).png"), inside: directoryURL)
             }
-            return CharacterAssets(profile: profile, sources: sources, frames: frames)
+            let assets = CharacterAssets(profile: profile, sources: sources, frames: frames)
+            try CharacterRuntimeAssetValidator.validate(assets)
+            return assets
         } catch {
             throw CharacterStoreError.unreadableAssets
         }
@@ -269,12 +281,92 @@ public final class CharacterStore: @unchecked Sendable {
         (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
     }
 
-    private func removeOrphanedBackups(in root: URL) {
+    private func restoreBackupAfterFailedCommit(
+        at backupURL: URL,
+        to targetURL: URL,
+        expectedID: UUID,
+        root: URL
+    ) {
+        guard
+            fileManager.fileExists(atPath: backupURL.path),
+            (try? readAssets(at: backupURL, expectedID: expectedID, root: root)) != nil
+        else {
+            return
+        }
+
+        do {
+            if fileManager.fileExists(atPath: targetURL.path) {
+                guard isInside(targetURL, root) else { return }
+                try fileManager.removeItem(at: targetURL)
+            }
+            try fileManager.moveItem(at: backupURL, to: targetURL)
+        } catch {
+            // The save still fails; a surviving valid backup is retried by startup recovery.
+        }
+    }
+
+    private func recoverOrphanedBackups(in root: URL) {
         guard let entries = try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isSymbolicLinkKey]) else {
             return
         }
-        for entry in entries where entry.lastPathComponent.hasPrefix(".backup-") && !isSymbolicLink(entry) {
-            try? fileManager.removeItem(at: entry)
+        for backupURL in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            guard
+                !isSymbolicLink(backupURL),
+                let expectedID = expectedID(fromBackupURL: backupURL),
+                (try? readAssets(at: backupURL, expectedID: expectedID, root: root)) != nil
+            else {
+                continue
+            }
+
+            let targetURL = directoryURL(for: expectedID, root: root)
+            if (try? readAssets(at: targetURL, expectedID: expectedID, root: root)) != nil {
+                try? fileManager.removeItem(at: backupURL)
+                continue
+            }
+
+            do {
+                var displacedTargetURL: URL?
+                if fileManager.fileExists(atPath: targetURL.path) {
+                    guard isInside(targetURL, root), !isSymbolicLink(targetURL) else { continue }
+                    let displaced = root.appendingPathComponent(
+                        ".invalid-target-\(expectedID.uuidString)-\(UUID().uuidString)",
+                        isDirectory: true
+                    )
+                    try fileManager.moveItem(at: targetURL, to: displaced)
+                    displacedTargetURL = displaced
+                }
+
+                do {
+                    try fileManager.moveItem(at: backupURL, to: targetURL)
+                } catch {
+                    if let displacedTargetURL,
+                       !fileManager.fileExists(atPath: targetURL.path) {
+                        try? fileManager.moveItem(at: displacedTargetURL, to: targetURL)
+                    }
+                    throw error
+                }
+            } catch {
+                // Recovery is best effort. Never delete a backup that could be the only valid copy.
+            }
         }
+    }
+
+    private func expectedID(fromBackupURL backupURL: URL) -> UUID? {
+        let prefix = ".backup-"
+        let name = backupURL.lastPathComponent
+        guard name.hasPrefix(prefix) else { return nil }
+        let remainder = name.dropFirst(prefix.count)
+        guard remainder.count == 73 else { return nil }
+        let idEnd = remainder.index(remainder.startIndex, offsetBy: 36)
+        guard remainder[idEnd] == "-" else { return nil }
+        let nonceStart = remainder.index(after: idEnd)
+        guard
+            let id = UUID(uuidString: String(remainder[..<idEnd])),
+            id != Self.builtInCharacterID,
+            UUID(uuidString: String(remainder[nonceStart...])) != nil
+        else {
+            return nil
+        }
+        return id
     }
 }

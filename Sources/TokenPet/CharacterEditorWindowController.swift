@@ -45,8 +45,12 @@ final class CharacterEditorWindowController: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard model.isDirty else { return true }
         guard confirmDiscard() else { return false }
-        model.cancelChanges()
-        return true
+        let currentState = model.editorState
+        let didReload = model.cancelChanges()
+        return CharacterEditorStateTransitions.afterCloseReload(
+            current: currentState,
+            reloaded: didReload ? model.editorState : nil
+        ).shouldClose
     }
 
     private func confirmDiscard() -> Bool {

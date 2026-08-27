@@ -48,13 +48,76 @@ public enum CharacterProfileValidator {
         if existingNames.contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase == foldedName }) {
             errors.append("duplicateName")
         }
-        if !(3...4).contains(profile.frameCount) { errors.append("frameCount") }
-        if profile.frameOrder.sorted() != Array(0..<profile.frameCount) { errors.append("frameOrder") }
+        if (3...4).contains(profile.frameCount) {
+            if profile.frameOrder.sorted() != Array(0..<profile.frameCount) { errors.append("frameOrder") }
+        } else {
+            errors.append("frameCount")
+            errors.append("frameOrder")
+        }
         if !(0...1).contains(profile.percentPosition.x) || !(0...1).contains(profile.percentPosition.y) { errors.append("percentPosition") }
         if !(10...36).contains(profile.percentFontSize) { errors.append("percentFontSize") }
         if profile.framesPerSecond != 3 { errors.append("framesPerSecond") }
         if profile.schemaVersion != 1 { errors.append("schemaVersion") }
         return errors
+    }
+}
+
+public struct CharacterEditorDraftState: Equatable, Sendable {
+    public let selectedID: UUID?
+    public let draftID: UUID?
+    public let isDirty: Bool
+
+    public init(selectedID: UUID?, draftID: UUID?, isDirty: Bool) {
+        self.selectedID = selectedID
+        self.draftID = draftID
+        self.isDirty = isDirty
+    }
+}
+
+public enum CharacterEditorLoadedSelection: Equatable, Sendable {
+    case builtIn(UUID)
+    case draft(UUID)
+}
+
+public struct CharacterEditorCloseResult: Equatable, Sendable {
+    public let state: CharacterEditorDraftState
+    public let shouldClose: Bool
+
+    public init(state: CharacterEditorDraftState, shouldClose: Bool) {
+        self.state = state
+        self.shouldClose = shouldClose
+    }
+}
+
+public enum CharacterEditorStateTransitions {
+    public static func afterSelectionAttempt(
+        current: CharacterEditorDraftState,
+        loadedSelection: CharacterEditorLoadedSelection?
+    ) -> CharacterEditorDraftState {
+        guard let loadedSelection else { return current }
+        switch loadedSelection {
+        case .builtIn(let id):
+            return CharacterEditorDraftState(selectedID: id, draftID: nil, isDirty: false)
+        case .draft(let id):
+            return CharacterEditorDraftState(selectedID: id, draftID: id, isDirty: false)
+        }
+    }
+
+    public static func afterCreatingDraft(
+        current: CharacterEditorDraftState,
+        newDraftID: UUID
+    ) -> CharacterEditorDraftState {
+        CharacterEditorDraftState(selectedID: newDraftID, draftID: newDraftID, isDirty: true)
+    }
+
+    public static func afterCloseReload(
+        current: CharacterEditorDraftState,
+        reloaded: CharacterEditorDraftState?
+    ) -> CharacterEditorCloseResult {
+        guard let reloaded, !reloaded.isDirty else {
+            return CharacterEditorCloseResult(state: current, shouldClose: false)
+        }
+        return CharacterEditorCloseResult(state: reloaded, shouldClose: true)
     }
 }
 
