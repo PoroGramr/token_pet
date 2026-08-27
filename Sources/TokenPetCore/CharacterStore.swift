@@ -72,7 +72,11 @@ public final class CharacterStore: @unchecked Sendable {
     public var selectedCharacterID: UUID? {
         get {
             guard let value = defaults.string(forKey: selectedCharacterIDKey) else { return nil }
-            return UUID(uuidString: value)
+            guard let id = UUID(uuidString: value) else {
+                defaults.removeObject(forKey: selectedCharacterIDKey)
+                return nil
+            }
+            return id
         }
         set {
             if let newValue {

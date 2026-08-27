@@ -143,6 +143,23 @@ private func testSavesLoadsListsAndClearsSelection() throws {
     if runner.failures > 0 { exit(1) }
 }
 
+private func testClearsMalformedSelectedCharacterID() {
+    let runner = TestRunner()
+    withStore { store, _, defaults in
+        let key = "TokenPet.selectedCharacterID"
+        defaults.set("not-a-uuid", forKey: key)
+
+        runner.expectEqual(store.selectedCharacterID, nil, "malformed selected ID resolves to no selection")
+        runner.expectEqual(defaults.object(forKey: key) as? String, nil, "malformed selected ID is removed")
+
+        let validID = UUID()
+        defaults.set(validID.uuidString, forKey: key)
+        runner.expectEqual(store.selectedCharacterID, validID, "valid selected ID is preserved")
+        runner.expectEqual(defaults.string(forKey: key), validID.uuidString, "valid selected ID remains stored")
+    }
+    if runner.failures > 0 { exit(1) }
+}
+
 private func testSkipsCorruptProfilesAndPreservesExistingAssetsOnRejectedReplacement() throws {
     let runner = TestRunner()
     try withStore { store, root, _ in
@@ -261,6 +278,7 @@ private func testCleanupFailureKeepsCommittedReplacement() throws {
 
 do {
     try testSavesLoadsListsAndClearsSelection()
+    testClearsMalformedSelectedCharacterID()
     try testSkipsCorruptProfilesAndPreservesExistingAssetsOnRejectedReplacement()
     try testRejectsReservedBuiltInProfileMutationsAndLoads()
     try testRejectsExtraFilesAndSymlinks()
