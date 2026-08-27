@@ -276,6 +276,28 @@ private func testCleanupFailureKeepsCommittedReplacement() throws {
     if runner.failures > 0 { exit(1) }
 }
 
+private func testCharacterDraftReordersAndValidates() {
+    let runner = TestRunner()
+    let first = Data("first".utf8)
+    let second = Data("second".utf8)
+    let third = Data("third".utf8)
+
+    var draft = CharacterDraft.new(name: "Cat", sourceFrames: [first, second, third])
+    draft.moveFrame(from: 0, to: 2)
+
+    runner.expectEqual(draft.sourceFrames, [second, third, first], "drag reorder")
+    runner.expectTrue(draft.validation(existingNames: []).isValid, "valid 3-frame draft")
+    runner.expectTrue(
+        !CharacterDraft.new(name: "", sourceFrames: [first, second]).validation(existingNames: []).isValid,
+        "empty name and two-frame draft rejected"
+    )
+    runner.expectTrue(
+        !draft.validation(existingNames: [" cat "]).isValid,
+        "duplicate name rejected case-insensitively"
+    )
+    if runner.failures > 0 { exit(1) }
+}
+
 do {
     try testSavesLoadsListsAndClearsSelection()
     testClearsMalformedSelectedCharacterID()
@@ -284,6 +306,7 @@ do {
     try testRejectsExtraFilesAndSymlinks()
     try testCommitFailurePreservesExistingTargetAndCleansStaging()
     try testCleanupFailureKeepsCommittedReplacement()
+    testCharacterDraftReordersAndValidates()
     print("PASS: TokenPetCharacterStoreTests")
 } catch {
     print("FAIL: unexpected error — \(error)")

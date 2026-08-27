@@ -10,10 +10,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             transport: URLSessionUsageTransport()
         )
     )
+    private lazy var characterStore = CharacterStore(
+        rootURL: Self.characterStorageRoot,
+        defaults: .standard
+    )
     private lazy var characterRepository = CharacterRepository(
-        store: CharacterStore(rootURL: Self.characterStorageRoot, defaults: .standard)
+        store: characterStore
     )
     private var panelController: PetPanelController?
+    private var characterEditorController: CharacterEditorWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -23,9 +28,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             characterRepository: characterRepository
         )
         self.panelController = panelController
+        let characterEditorController = CharacterEditorWindowController(
+            store: characterStore,
+            repository: characterRepository
+        ) { [weak panelController] character in
+            panelController?.apply(character: character)
+        }
+        self.characterEditorController = characterEditorController
         panelController.onRefresh = { [weak self] in self?.usageController.refresh(manual: true) }
         panelController.onLogin = { [weak self] in self?.startClaudeLogin() }
         panelController.onCredentialFallbackChanged = { [weak self] in self?.usageController.refresh(manual: false) }
+        panelController.onManageCharacters = { [weak characterEditorController] in
+            characterEditorController?.show()
+        }
         panelController.show()
 
         usageController.onStateChange = { [weak panelController] state in

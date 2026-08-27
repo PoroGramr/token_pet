@@ -23,6 +23,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     var onRefresh: (() -> Void)?
     var onLogin: (() -> Void)?
     var onCredentialFallbackChanged: (() -> Void)?
+    var onManageCharacters: (() -> Void)?
 
     init(loginItemManager: LoginItemManager, characterRepository: CharacterRepository) {
         self.loginItemManager = loginItemManager
@@ -53,6 +54,10 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     func update(state: UsageDisplayState) {
         self.state = state
         petView.update(state: state)
+    }
+
+    func apply(character: RuntimeCharacter) {
+        petView.apply(character: character)
     }
 
     func presentMenuError(_ message: String) {
@@ -86,6 +91,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "새로고침", action: #selector(refresh), keyEquivalent: "r").target = self
         menu.addItem(withTitle: "우측 하단으로 이동", action: #selector(resetPosition), keyEquivalent: "") .target = self
+        menu.addItem(withTitle: "캐릭터 관리…", action: #selector(manageCharacters), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Claude Code 로그인", action: #selector(login), keyEquivalent: "").target = self
         credentialFallbackItem.target = self
         menu.addItem(credentialFallbackItem)
@@ -131,6 +137,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
 
     @objc private func refresh() { onRefresh?() }
     @objc private func login() { onLogin?() }
+    @objc private func manageCharacters() { onManageCharacters?() }
     @objc private func quit() { NSApp.terminate(nil) }
 
     @objc private func toggleLoginItem() {
