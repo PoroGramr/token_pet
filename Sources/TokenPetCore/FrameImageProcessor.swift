@@ -6,6 +6,11 @@ import UniformTypeIdentifiers
 public enum FrameSequence {
     public static let indices = [1, 2, 3, 4, 5, 4, 3, 2]
     public static let framesPerSecond = 3
+
+    public static func indices(frameCount: Int) -> [Int] {
+        guard frameCount > 1 else { return Array(0..<max(0, frameCount)) }
+        return Array(0..<frameCount) + Array(stride(from: frameCount - 2, through: 1, by: -1))
+    }
 }
 
 public enum FrameImageError: Error, Equatable, Sendable {

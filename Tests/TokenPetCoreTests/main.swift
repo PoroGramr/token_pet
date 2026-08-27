@@ -186,6 +186,33 @@ private func testDefinesPingPongAnimationSequence() {
 }
 
 @MainActor
+private func testCharacterProfileAndPercentLayoutContracts() throws {
+    let threeFrame = CharacterProfile(
+        id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+        name: "Cat",
+        frameCount: 3,
+        frameOrder: [0, 1, 2],
+        removesLightBackground: false,
+        percentPosition: NormalizedPoint(x: 0.5, y: 0.58),
+        percentFontSize: 22,
+        framesPerSecond: 3,
+        schemaVersion: 1
+    )
+    runner.expectEqual(FrameSequence.indices(frameCount: 3), [0, 1, 2, 1], "3-frame ping-pong")
+    runner.expectEqual(FrameSequence.indices(frameCount: 4), [0, 1, 2, 3, 2, 1], "4-frame ping-pong")
+    runner.expectEqual(try JSONDecoder().decode(CharacterProfile.self, from: JSONEncoder().encode(threeFrame)), threeFrame, "profile round trip")
+    runner.expectEqual(PercentLayout.clampedPosition(NormalizedPoint(x: 2, y: -1)), NormalizedPoint(x: 1, y: 0), "position clamp")
+    runner.expectTrue(CharacterProfileValidator.validate(threeFrame, existingNames: []).isEmpty, "valid profile")
+
+    var duplicate = threeFrame
+    duplicate.name = " cat "
+    runner.expectTrue(!CharacterProfileValidator.validate(duplicate, existingNames: ["CAT"]).isEmpty, "duplicate name rejected")
+    var invalidFrames = threeFrame
+    invalidFrames.frameCount = 5
+    runner.expectTrue(!CharacterProfileValidator.validate(invalidFrames, existingNames: []).isEmpty, "five user frames rejected")
+}
+
+@MainActor
 private func testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames() throws {
     for path in ["img/2.png", "img/3.png"] {
         let image = try FrameImageProcessor.makeTransparentImage(from: Data(contentsOf: URL(fileURLWithPath: path)))
@@ -334,6 +361,7 @@ do {
     try testLoadsLegacyCredentialThroughAuthorizedSecurityToolFallback()
     testSecurityToolFallbackRequiresExplicitConsentAndNeverRunsAfterCancel()
     testDefinesPingPongAnimationSequence()
+    try testCharacterProfileAndPercentLayoutContracts()
     try testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames()
     try testPreservesExistingTransparency()
     try testPreparesNormalizedTransparentBundleFrames()
