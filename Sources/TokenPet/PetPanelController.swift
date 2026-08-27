@@ -1,0 +1,153 @@
+import AppKit
+import TokenPetCore
+
+@MainActor
+final class PetPanelController: NSObject, NSMenuDelegate {
+    private static let panelSize = NSSize(width: 120, height: 120)
+    private let loginItemManager: LoginItemManager
+    private let panel: NSPanel
+    private let petView: PetView
+    private let menu = NSMenu()
+    private let statusItem = NSMenuItem(title: "사용량을 불러오는 중입니다", action: nil, keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "로그인 시 실행", action: #selector(toggleLoginItem), keyEquivalent: "")
+    private var state: UsageDisplayState = .loading
+    private var transientError: String?
+
+    var onRefresh: (() -> Void)?
+    var onLogin: (() -> Void)?
+
+    init(loginItemManager: LoginItemManager) {
+        self.loginItemManager = loginItemManager
+        petView = PetView(frame: NSRect(origin: .zero, size: Self.panelSize))
+        panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: Self.panelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        super.init()
+        configurePanel()
+        configureMenu()
+        restorePosition()
+        observeWindowChanges()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    func show() {
+        panel.orderFrontRegardless()
+    }
+
+    func update(state: UsageDisplayState) {
+        self.state = state
+        petView.update(state: state)
+    }
+
+    func presentMenuError(_ message: String) {
+        transientError = message
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        statusItem.title = transientError ?? WidgetPresentation(state: state).statusMessage
+        transientError = nil
+        loginItem.state = loginItemManager.isEnabled ? .on : .off
+    }
+
+    private func configurePanel() {
+        panel.contentView = petView
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.isMovable = true
+        panel.isMovableByWindowBackground = true
+    }
+
+    private func configureMenu() {
+        menu.delegate = self
+        statusItem.isEnabled = false
+        menu.addItem(statusItem)
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "새로고침", action: #selector(refresh), keyEquivalent: "r").target = self
+        menu.addItem(withTitle: "우측 하단으로 이동", action: #selector(resetPosition), keyEquivalent: "") .target = self
+        menu.addItem(withTitle: "Claude Code 로그인", action: #selector(login), keyEquivalent: "").target = self
+        loginItem.target = self
+        menu.addItem(loginItem)
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "종료", action: #selector(quit), keyEquivalent: "q").target = self
+        petView.contextMenu = menu
+    }
+
+    private func restorePosition() {
+        let defaults = UserDefaults.standard
+        let saved: NSPoint? = defaults.object(forKey: "panelOriginX") == nil ? nil : NSPoint(
+            x: defaults.double(forKey: "panelOriginX"),
+            y: defaults.double(forKey: "panelOriginY")
+        )
+        let origin = PanelPositioning.origin(
+            saved: saved,
+            panelSize: Self.panelSize,
+            visibleScreens: orderedVisibleFrames
+        )
+        panel.setFrameOrigin(origin)
+    }
+
+    private var orderedVisibleFrames: [NSRect] {
+        NSScreen.screens.map(\.visibleFrame)
+    }
+
+    private func observeWindowChanges() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(panelMoved),
+            name: NSWindow.didMoveNotification,
+            object: panel
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenParametersChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+
+    @objc private func refresh() { onRefresh?() }
+    @objc private func login() { onLogin?() }
+    @objc private func quit() { NSApp.terminate(nil) }
+
+    @objc private func toggleLoginItem() {
+        do {
+            try loginItemManager.setEnabled(!loginItemManager.isEnabled)
+        } catch {
+            transientError = "로그인 시 실행 설정을 변경하지 못했습니다"
+        }
+    }
+
+    @objc private func resetPosition() {
+        let origin = PanelPositioning.origin(
+            saved: nil,
+            panelSize: Self.panelSize,
+            visibleScreens: orderedVisibleFrames
+        )
+        panel.setFrameOrigin(origin)
+        savePosition()
+    }
+
+    @objc private func panelMoved(_ notification: Notification) {
+        savePosition()
+    }
+
+    @objc private func screenParametersChanged(_ notification: Notification) {
+        restorePosition()
+    }
+
+    private func savePosition() {
+        UserDefaults.standard.set(panel.frame.origin.x, forKey: "panelOriginX")
+        UserDefaults.standard.set(panel.frame.origin.y, forKey: "panelOriginY")
+    }
+}
