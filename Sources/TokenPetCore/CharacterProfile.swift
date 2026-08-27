@@ -78,4 +78,31 @@ public enum PercentLayout {
     public static func origin(containerSize: CGSize, contentSize: CGSize, position: NormalizedPoint) -> CGPoint {
         origin(containerSize: containerSize, position: position, contentSize: contentSize)
     }
+
+    public static func textRect(
+        containerSize: CGSize,
+        position: NormalizedPoint,
+        fontSize: Double,
+        measuredTextSize: CGSize
+    ) -> CGRect {
+        let container = CGSize(
+            width: max(0, containerSize.width),
+            height: max(0, containerSize.height)
+        )
+        let content = CGSize(
+            width: min(container.width, max(0, measuredTextSize.width)),
+            height: min(container.height, max(max(0, measuredTextSize.height), CGFloat(max(0, fontSize))))
+        )
+        let clamped = clampedPosition(position)
+        let centeredOrigin = CGPoint(
+            x: container.width * clamped.x - content.width / 2,
+            y: container.height * clamped.y - content.height / 2
+        )
+        return CGRect(
+            x: min(max(0, centeredOrigin.x), container.width - content.width),
+            y: min(max(0, centeredOrigin.y), container.height - content.height),
+            width: content.width,
+            height: content.height
+        )
+    }
 }

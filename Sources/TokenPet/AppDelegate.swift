@@ -10,12 +10,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             transport: URLSessionUsageTransport()
         )
     )
+    private lazy var characterRepository = CharacterRepository(
+        store: CharacterStore(rootURL: Self.characterStorageRoot, defaults: .standard)
+    )
     private var panelController: PetPanelController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        let panelController = PetPanelController(loginItemManager: loginItemManager)
+        let panelController = PetPanelController(
+            loginItemManager: loginItemManager,
+            characterRepository: characterRepository
+        )
         self.panelController = panelController
         panelController.onRefresh = { [weak self] in self?.usageController.refresh(manual: true) }
         panelController.onLogin = { [weak self] in self?.startClaudeLogin() }
@@ -46,5 +52,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             panelController?.presentMenuError("Terminal에서 Claude 로그인을 시작하지 못했습니다")
         }
+    }
+
+    private static var characterStorageRoot: URL {
+        let applicationSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        )[0]
+        return applicationSupport
+            .appendingPathComponent("TokenPet", isDirectory: true)
+            .appendingPathComponent("Characters", isDirectory: true)
     }
 }

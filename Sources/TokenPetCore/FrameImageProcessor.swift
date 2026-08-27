@@ -4,7 +4,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 public enum FrameSequence {
-    public static let indices = [1, 2, 3, 4, 5, 4, 3, 2]
+    public static let indices = [1, 2, 3, 4, 3, 2]
     public static let framesPerSecond = 3
 
     public static func indices(frameCount: Int) -> [Int] {

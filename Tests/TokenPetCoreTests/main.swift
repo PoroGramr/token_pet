@@ -182,7 +182,7 @@ private func alphaValue(in image: CGImage, x: Int, y: Int) -> UInt8 {
 
 @MainActor
 private func testDefinesPingPongAnimationSequence() {
-    runner.expectEqual(FrameSequence.indices, [1, 2, 3, 4, 5, 4, 3, 2], "animation frame order")
+    runner.expectEqual(FrameSequence.indices, [1, 2, 3, 4, 3, 2], "animation frame order")
     runner.expectEqual(FrameSequence.framesPerSecond, 3, "animation speed")
 }
 
@@ -200,7 +200,37 @@ private func testCharacterProfileAndPercentLayoutContracts() throws {
         schemaVersion: 1
     )
     runner.expectEqual(FrameSequence.indices(frameCount: 3), [0, 1, 2, 1], "3-frame ping-pong")
-    runner.expectEqual(FrameSequence.indices(frameCount: 4), [0, 1, 2, 3, 2, 1], "4-frame ping-pong")
+    runner.expectEqual(FrameSequence.indices(frameCount: 4), [0, 1, 2, 3, 2, 1], "built-in 4-frame ping-pong")
+    runner.expectEqual(
+        PercentLayout.textRect(
+            containerSize: CGSize(width: 120, height: 120),
+            position: NormalizedPoint(x: 0.5, y: 0.5),
+            fontSize: 10,
+            measuredTextSize: CGSize(width: 20, height: 10)
+        ),
+        CGRect(x: 50, y: 55, width: 20, height: 10),
+        "10pt text is centered at its normalized position"
+    )
+    runner.expectEqual(
+        PercentLayout.textRect(
+            containerSize: CGSize(width: 120, height: 120),
+            position: NormalizedPoint(x: 0.5, y: 0.5),
+            fontSize: 36,
+            measuredTextSize: CGSize(width: 70, height: 36)
+        ),
+        CGRect(x: 25, y: 42, width: 70, height: 36),
+        "36pt text is centered at its normalized position"
+    )
+    runner.expectEqual(
+        PercentLayout.textRect(
+            containerSize: CGSize(width: 120, height: 120),
+            position: NormalizedPoint(x: -0.5, y: 2),
+            fontSize: 20,
+            measuredTextSize: CGSize(width: 40, height: 20)
+        ),
+        CGRect(x: 0, y: 100, width: 40, height: 20),
+        "text rect is clamped inside its container"
+    )
     runner.expectEqual(try JSONDecoder().decode(CharacterProfile.self, from: JSONEncoder().encode(threeFrame)), threeFrame, "profile round trip")
     runner.expectEqual(PercentLayout.clampedPosition(NormalizedPoint(x: 2, y: -1)), NormalizedPoint(x: 1, y: 0), "position clamp")
     runner.expectTrue(CharacterProfileValidator.validate(threeFrame, existingNames: []).isEmpty, "valid profile")
@@ -260,7 +290,7 @@ private func testPreservesExistingTransparency() throws {
 
 @MainActor
 private func testPreparesNormalizedTransparentBundleFrames() throws {
-    for index in 1...5 {
+    for index in 1...4 {
         let sourceData = try Data(contentsOf: URL(fileURLWithPath: "img/\(index).png"))
         let pngData = try FrameImageProcessor.makeNormalizedPNG(from: sourceData, pixelSize: 240)
         guard let source = CGImageSourceCreateWithData(pngData as CFData, nil),

@@ -5,6 +5,7 @@ import TokenPetCore
 final class PetPanelController: NSObject, NSMenuDelegate {
     private static let panelSize = NSSize(width: 120, height: 120)
     private let loginItemManager: LoginItemManager
+    private let characterRepository: CharacterRepository
     private let panel: NSPanel
     private let petView: PetView
     private let menu = NSMenu()
@@ -23,8 +24,9 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     var onLogin: (() -> Void)?
     var onCredentialFallbackChanged: (() -> Void)?
 
-    init(loginItemManager: LoginItemManager) {
+    init(loginItemManager: LoginItemManager, characterRepository: CharacterRepository) {
         self.loginItemManager = loginItemManager
+        self.characterRepository = characterRepository
         petView = PetView(frame: NSRect(origin: .zero, size: Self.panelSize))
         panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: Self.panelSize),
@@ -33,6 +35,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
             defer: false
         )
         super.init()
+        petView.apply(character: characterRepository.selectedCharacter())
         configurePanel()
         configureMenu()
         restorePosition()

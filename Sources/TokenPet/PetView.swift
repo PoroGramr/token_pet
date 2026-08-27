@@ -3,14 +3,16 @@ import TokenPetCore
 
 @MainActor
 final class PetView: NSView {
-    private let frames: [NSImage]
+    private var frames: [NSImage] = []
+    private var playbackIndices: [Int] = []
+    private var percentPosition = NormalizedPoint(x: 0.5, y: 52.0 / 120.0)
+    private var percentFontSize: Double = 22
     private var frameIndex = 0
     private var animationTimer: Timer?
     private var presentation = WidgetPresentation(state: .loading)
     var contextMenu: NSMenu?
 
     override init(frame frameRect: NSRect) {
-        frames = Self.loadFrames()
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -35,12 +37,29 @@ final class PetView: NSView {
         needsDisplay = true
     }
 
+    func apply(character: RuntimeCharacter) {
+        let frameCountChanged = frames.count != character.frames.count
+        frames = character.frames
+        playbackIndices = character.playbackIndices.filter { frames.indices.contains($0) }
+        percentPosition = character.profile.percentPosition
+        percentFontSize = character.profile.percentFontSize
+        frameIndex = 0
+        if frameCountChanged {
+            animationTimer?.invalidate()
+            animationTimer = nil
+        }
+        if window != nil {
+            startAnimation()
+        }
+        needsDisplay = true
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         NSGraphicsContext.current?.imageInterpolation = .none
 
-        if !frames.isEmpty {
-            let image = frames[frameIndex % frames.count]
+        if let imageIndex = playbackIndices.indices.isEmpty ? nil : playbackIndices[frameIndex % playbackIndices.count] {
+            let image = frames[imageIndex]
             let scale = min(bounds.width / image.size.width, bounds.height / image.size.height)
             let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
             let destination = NSRect(
@@ -55,16 +74,20 @@ final class PetView: NSView {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 22, weight: .heavy),
+            .font: NSFont.systemFont(ofSize: percentFontSize, weight: .heavy),
             .foregroundColor: NSColor.white,
             .strokeColor: NSColor(calibratedRed: 0.01, green: 0.08, blue: 0.22, alpha: 1),
             .strokeWidth: -3,
             .paragraphStyle: paragraph
         ]
-        presentation.text.draw(
-            in: NSRect(x: 0, y: 37, width: bounds.width, height: 30),
-            withAttributes: attributes
+        let measuredTextSize = (presentation.text as NSString).size(withAttributes: attributes)
+        let textRect = PercentLayout.textRect(
+            containerSize: bounds.size,
+            position: percentPosition,
+            fontSize: percentFontSize,
+            measuredTextSize: measuredTextSize
         )
+        presentation.text.draw(in: textRect, withAttributes: attributes)
 
         if presentation.showsWarning {
             let warningAttributes: [NSAttributedString.Key: Any] = [
@@ -85,7 +108,7 @@ final class PetView: NSView {
     }
 
     private func startAnimation() {
-        guard frames.count > 1, animationTimer == nil else { return }
+        guard playbackIndices.count > 1, animationTimer == nil else { return }
         let timer = Timer(
             timeInterval: 1 / Double(FrameSequence.framesPerSecond),
             target: self,
@@ -98,28 +121,8 @@ final class PetView: NSView {
     }
 
     @objc private func advanceFrame() {
-        frameIndex = (frameIndex + 1) % frames.count
+        guard !playbackIndices.isEmpty else { return }
+        frameIndex = (frameIndex + 1) % playbackIndices.count
         needsDisplay = true
-    }
-
-    private static func loadFrames() -> [NSImage] {
-        let uniqueFrames = Dictionary(uniqueKeysWithValues: (1...5).compactMap { index -> (Int, NSImage)? in
-            guard let url = frameURL(index: index), let data = try? Data(contentsOf: url),
-                  let cgImage = try? FrameImageProcessor.makeTransparentImage(from: data) else {
-                return nil
-            }
-            return (index, NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height)))
-        })
-        return FrameSequence.indices.compactMap { uniqueFrames[$0] }
-    }
-
-    private static func frameURL(index: Int) -> URL? {
-        if let resourceURL = Bundle.main.resourceURL {
-            let bundled = resourceURL.appendingPathComponent("Frames/\(index).png")
-            if FileManager.default.fileExists(atPath: bundled.path) { return bundled }
-        }
-        let development = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent("img/\(index).png")
-        return FileManager.default.fileExists(atPath: development.path) ? development : nil
     }
 }
