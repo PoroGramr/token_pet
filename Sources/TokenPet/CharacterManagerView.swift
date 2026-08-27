@@ -3,7 +3,11 @@ import TokenPetCore
 
 struct CharacterManagerView: View {
     @ObservedObject var model: CharacterManagerModel
+    @ObservedObject var languageSettings: LanguageSettings
     @State private var showsDeleteConfirmation = false
+
+    private func t(_ korean: String) -> String { languageSettings.text(korean) }
+    private func frameTitle(_ index: Int) -> String { t("프레임") + " " + String(index + 1) }
 
     var body: some View {
         HSplitView {
@@ -18,7 +22,7 @@ struct CharacterManagerView: View {
     private var characterList: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("캐릭터")
+                Text(t("캐릭터"))
                     .font(.title2.bold())
                 Spacer()
                 Button {
@@ -26,7 +30,7 @@ struct CharacterManagerView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .help("새 캐릭터")
+                .help(t("새 캐릭터"))
             }
             .padding(16)
 
@@ -40,14 +44,14 @@ struct CharacterManagerView: View {
                         Image(systemName: profile.id == CharacterRepository.builtInID ? "battery.100" : "photo.stack")
                             .frame(width: 20)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(profile.name)
+                            Text(profile.id == CharacterRepository.builtInID ? t(profile.name) : profile.name)
                                 .lineLimit(1)
                             if profile.id == CharacterRepository.builtInID {
-                                Text("기본 · 읽기 전용")
+                                Text(t("기본 · 읽기 전용"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             } else {
-                                Text("\(profile.frameCount)프레임")
+                                Text(String(profile.frameCount) + " " + t("프레임"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -71,7 +75,7 @@ struct CharacterManagerView: View {
             .listStyle(.sidebar)
 
             Divider()
-            Button("새 캐릭터 추가") {
+            Button(t("새 캐릭터 추가")) {
                 model.createCharacter()
             }
             .buttonStyle(.borderedProminent)
@@ -101,12 +105,12 @@ struct CharacterManagerView: View {
                 Image(systemName: "battery.100")
                     .font(.system(size: 70))
                     .foregroundStyle(.tint)
-                Text("기본 캐릭터")
+                Text(t("기본 캐릭터"))
                     .font(.title.bold())
-                Text("기본 캐릭터는 읽기 전용입니다.\n새 캐릭터를 추가하거나 왼쪽 목록에서 편집할 캐릭터를 선택하세요.")
+                Text(t("기본 캐릭터는 읽기 전용입니다.\n새 캐릭터를 추가하거나 왼쪽 목록에서 편집할 캐릭터를 선택하세요."))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
-                Button("새 캐릭터 추가") {
+                Button(t("새 캐릭터 추가")) {
                     model.createCharacter()
                 }
                 .buttonStyle(.borderedProminent)
@@ -117,10 +121,10 @@ struct CharacterManagerView: View {
 
     private func editorHeader(draft: CharacterDraft) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("캐릭터 설정")
+            Text(t("캐릭터 설정"))
                 .font(.title2.bold())
             TextField(
-                "캐릭터 이름",
+                t("캐릭터 이름"),
                 text: Binding(
                     get: { draft.name },
                     set: { model.updateName($0) }
@@ -135,14 +139,14 @@ struct CharacterManagerView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("애니메이션 프레임")
+                    Text(t("애니메이션 프레임"))
                         .font(.headline)
-                    Text("PNG/JPG 이미지 3장 또는 4장을 선택하고 드래그해 순서를 바꾸세요.")
+                    Text(t("PNG/JPG 이미지 3장 또는 4장을 선택하고 드래그해 순서를 바꾸세요."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("이미지 선택…") {
+                Button(t("이미지 선택…")) {
                     model.importFrames()
                 }
             }
@@ -154,7 +158,7 @@ struct CharacterManagerView: View {
             }
 
             Toggle(
-                "밝은 배경 제거",
+                t("밝은 배경 제거"),
                 isOn: Binding(
                     get: { draft.removesLightBackground },
                     set: { model.setRemovesLightBackground($0) }
@@ -176,7 +180,7 @@ struct CharacterManagerView: View {
                         .interpolation(.none)
                         .scaledToFit()
                         .padding(8)
-                    Text("프레임 \(index + 1)")
+                    Text(frameTitle(index))
                         .font(.caption.bold())
                 }
                 .frame(width: 120, height: 130)
@@ -201,7 +205,7 @@ struct CharacterManagerView: View {
             VStack(spacing: 8) {
                 Image(systemName: "photo.badge.plus")
                     .font(.title2)
-                Text("프레임 \(index + 1)")
+                Text(frameTitle(index))
                     .font(.caption)
             }
             .foregroundStyle(.secondary)
@@ -215,9 +219,9 @@ struct CharacterManagerView: View {
     private func previewSection(draft: CharacterDraft) -> some View {
         HStack(alignment: .top, spacing: 26) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("프레임 \(model.selectedFrameIndex + 1) 위치 편집")
+                Text(frameTitle(model.selectedFrameIndex) + " " + t("위치 편집"))
                     .font(.headline)
-                Text("선택한 이미지에서 72%를 드래그하세요.")
+                Text(t("선택한 이미지에서 72%를 드래그하세요."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if draft.displayFrames.indices.contains(model.selectedFrameIndex),
@@ -238,9 +242,9 @@ struct CharacterManagerView: View {
             }
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("전체 애니메이션")
+                Text(t("전체 애니메이션"))
                     .font(.headline)
-                Text("각 이미지의 위치가 3fps 왕복 재생에 적용됩니다.")
+                Text(t("각 이미지의 위치가 3fps 왕복 재생에 적용됩니다."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 CharacterAnimationPreview(draft: draft)
@@ -249,7 +253,7 @@ struct CharacterManagerView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.25)))
 
-                Text("프레임 \(model.selectedFrameIndex + 1) 좌표")
+                Text(frameTitle(model.selectedFrameIndex) + " " + t("좌표"))
                     .font(.headline)
                 HStack {
                     numericField(
@@ -266,7 +270,7 @@ struct CharacterManagerView: View {
                     )
                 }
 
-                Text("글자 크기 \(Int(draft.percentFontSize.rounded()))pt")
+                Text(t("글자 크기") + " " + String(Int(draft.percentFontSize.rounded())) + "pt")
                 Slider(
                     value: Binding(
                         get: { draft.percentFontSize },
@@ -276,7 +280,7 @@ struct CharacterManagerView: View {
                     step: 1
                 )
                 .frame(width: 250)
-                Text("미리보기와 위젯은 같은 위치 계산, 글꼴, 색상과 외곽선을 사용합니다.")
+                Text(t("미리보기와 위젯은 같은 위치 계산, 글꼴, 색상과 외곽선을 사용합니다."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: 280, alignment: .leading)
@@ -309,35 +313,35 @@ struct CharacterManagerView: View {
     private var actionBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let errorMessage = model.errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                Label(t(errorMessage), systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
             }
             HStack {
-                Button("캐릭터 삭제", role: .destructive) {
+                Button(t("캐릭터 삭제"), role: .destructive) {
                     showsDeleteConfirmation = true
                 }
                 .disabled(!model.canDeleteSelected)
                 Spacer()
-                Button("취소") {
+                Button(t("취소")) {
                     model.cancelChanges()
                 }
-                Button("저장 및 적용") {
+                Button(t("저장 및 적용")) {
                     model.saveAndApply()
                 }
                 .buttonStyle(.borderedProminent)
             }
         }
         .confirmationDialog(
-            "이 캐릭터를 삭제할까요?",
+            t("이 캐릭터를 삭제할까요?"),
             isPresented: $showsDeleteConfirmation,
             titleVisibility: .visible
         ) {
-            Button("삭제", role: .destructive) {
+            Button(t("삭제"), role: .destructive) {
                 model.deleteSelected()
             }
-            Button("취소", role: .cancel) {}
+            Button(t("취소"), role: .cancel) {}
         } message: {
-            Text("저장된 이미지와 설정이 함께 삭제되며 되돌릴 수 없습니다.")
+            Text(t("저장된 이미지와 설정이 함께 삭제되며 되돌릴 수 없습니다."))
         }
     }
 

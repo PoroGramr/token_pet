@@ -4,6 +4,7 @@ import TokenPetCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let loginItemManager = LoginItemManager()
+    private let languageSettings = LanguageSettings()
     private lazy var usageController = UsageController(
         service: AnthropicUsageService(
             credentials: ClaudeKeychainStore(),
@@ -25,12 +26,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let panelController = PetPanelController(
             loginItemManager: loginItemManager,
-            characterRepository: characterRepository
+            characterRepository: characterRepository,
+            languageSettings: languageSettings
         )
         self.panelController = panelController
         let characterEditorController = CharacterEditorWindowController(
             store: characterStore,
-            repository: characterRepository
+            repository: characterRepository,
+            languageSettings: languageSettings
         ) { [weak panelController] character in
             panelController?.apply(character: character)
         }
@@ -40,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController.onCredentialFallbackChanged = { [weak self] in self?.usageController.refresh(manual: false) }
         panelController.onManageCharacters = { [weak characterEditorController] in
             characterEditorController?.show()
+        }
+        panelController.onLanguageChanged = { [weak characterEditorController] in
+            characterEditorController?.updateLanguage()
         }
         panelController.show()
 
@@ -65,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try ClaudeLoginLauncher.openLoginCommand()
             usageController.beginLoginMonitoring()
         } catch {
-            panelController?.presentMenuError("Terminal에서 Claude 로그인을 시작하지 못했습니다")
+            panelController?.presentMenuError(languageSettings.text("Terminal에서 Claude 로그인을 시작하지 못했습니다"))
         }
     }
 

@@ -14,16 +14,19 @@ final class CharacterManagerModel: ObservableObject {
 
     private let store: CharacterStore
     private let repository: CharacterRepository
+    private let languageSettings: LanguageSettings
     private let onApply: (RuntimeCharacter) -> Void
     var confirmDiscard: (() -> Bool)?
 
     init(
         store: CharacterStore,
         repository: CharacterRepository,
+        languageSettings: LanguageSettings,
         onApply: @escaping (RuntimeCharacter) -> Void
     ) {
         self.store = store
         self.repository = repository
+        self.languageSettings = languageSettings
         self.onApply = onApply
         reloadProfiles()
     }
@@ -67,8 +70,8 @@ final class CharacterManagerModel: ObservableObject {
 
     func importFrames() {
         let panel = NSOpenPanel()
-        panel.title = "캐릭터 프레임 선택"
-        panel.prompt = "가져오기"
+        panel.title = languageSettings.text("캐릭터 프레임 선택")
+        panel.prompt = languageSettings.text("가져오기")
         panel.allowedContentTypes = [.png, .jpeg]
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
@@ -76,7 +79,7 @@ final class CharacterManagerModel: ObservableObject {
 
         guard panel.runModal() == .OK else { return }
         guard (3...4).contains(panel.urls.count) else {
-            errorMessage = "이미지는 한 번에 3장 또는 4장을 선택해 주세요."
+            errorMessage = languageSettings.text("이미지는 한 번에 3장 또는 4장을 선택해 주세요.")
             return
         }
 
@@ -105,7 +108,7 @@ final class CharacterManagerModel: ObservableObject {
             errorMessage = nil
             isDirty = true
         } catch {
-            errorMessage = "선택한 이미지를 읽거나 처리하지 못했습니다. PNG/JPG 파일을 확인해 주세요."
+            errorMessage = languageSettings.text("선택한 이미지를 읽거나 처리하지 못했습니다. PNG/JPG 파일을 확인해 주세요.")
         }
     }
 
@@ -165,7 +168,7 @@ final class CharacterManagerModel: ObservableObject {
             errorMessage = nil
             isDirty = true
         } catch {
-            errorMessage = "배경 제거 설정을 적용하지 못했습니다. 기존 이미지는 유지됩니다."
+            errorMessage = languageSettings.text("배경 제거 설정을 적용하지 못했습니다. 기존 이미지는 유지됩니다.")
         }
     }
 
@@ -182,7 +185,7 @@ final class CharacterManagerModel: ObservableObject {
             errorMessage = nil
             isDirty = true
         } catch {
-            errorMessage = "이미지를 다시 처리하지 못했습니다. 기존 이미지는 유지됩니다."
+            errorMessage = languageSettings.text("이미지를 다시 처리하지 못했습니다. 기존 이미지는 유지됩니다.")
         }
     }
 
@@ -220,7 +223,7 @@ final class CharacterManagerModel: ObservableObject {
                 playbackIndices: FrameSequence.indices(frameCount: orderedFrames.count)
             )
         } catch {
-            errorMessage = "표시할 수 없는 이미지가 있어 저장하지 않았습니다. 기존 캐릭터는 그대로 유지됩니다."
+            errorMessage = languageSettings.text("표시할 수 없는 이미지가 있어 저장하지 않았습니다. 기존 캐릭터는 그대로 유지됩니다.")
             return
         }
 
@@ -232,12 +235,12 @@ final class CharacterManagerModel: ObservableObject {
             selectedID = candidate.id
             isDirty = false
         } catch {
-            errorMessage = "캐릭터를 저장하지 못했습니다. 기존 캐릭터는 그대로 유지됩니다."
+            errorMessage = languageSettings.text("캐릭터를 저장하지 못했습니다. 기존 캐릭터는 그대로 유지됩니다.")
             return
         }
 
         if !reloadProfiles() {
-            errorMessage = "캐릭터는 저장하고 적용했지만 목록을 새로 불러오지 못했습니다."
+            errorMessage = languageSettings.text("캐릭터는 저장하고 적용했지만 목록을 새로 불러오지 못했습니다.")
         }
     }
 
@@ -257,7 +260,7 @@ final class CharacterManagerModel: ObservableObject {
             isDirty = false
             reloadProfiles()
         } catch {
-            errorMessage = "캐릭터를 삭제하지 못했습니다."
+            errorMessage = languageSettings.text("캐릭터를 삭제하지 못했습니다.")
         }
     }
 
@@ -284,7 +287,7 @@ final class CharacterManagerModel: ObservableObject {
                 builtInID: CharacterRepository.builtInID,
                 catalog: .unavailable
             )
-            errorMessage = "캐릭터 목록을 불러오지 못했습니다. 기존 선택은 유지됩니다."
+            errorMessage = languageSettings.text("캐릭터 목록을 불러오지 못했습니다. 기존 선택은 유지됩니다.")
             return false
         }
 
@@ -331,19 +334,19 @@ final class CharacterManagerModel: ObservableObject {
             )
             selectedID = preservedState.selectedID
             isDirty = preservedState.isDirty
-            errorMessage = "캐릭터 데이터를 불러오지 못했습니다. 기존 편집 상태를 유지합니다."
+            errorMessage = languageSettings.text("캐릭터 데이터를 불러오지 못했습니다. 기존 편집 상태를 유지합니다.")
             return false
         }
     }
 
     private func validationMessage(for errors: [String]) -> String {
-        if errors.contains("name") { return "캐릭터 이름은 1~40자로 입력해 주세요." }
-        if errors.contains("duplicateName") { return "같은 이름의 캐릭터가 이미 있습니다." }
+        if errors.contains("name") { return languageSettings.text("캐릭터 이름은 1~40자로 입력해 주세요.") }
+        if errors.contains("duplicateName") { return languageSettings.text("같은 이름의 캐릭터가 이미 있습니다.") }
         if errors.contains("frameCount") || errors.contains("displayFrames") || errors.contains("framePercentPositions") {
-            return "정상적인 이미지 3장 또는 4장이 필요합니다."
+            return languageSettings.text("정상적인 이미지 3장 또는 4장이 필요합니다.")
         }
-        if errors.contains("percentFontSize") { return "글자 크기는 10~36pt로 설정해 주세요." }
-        return "입력 내용을 확인해 주세요."
+        if errors.contains("percentFontSize") { return languageSettings.text("글자 크기는 10~36pt로 설정해 주세요.") }
+        return languageSettings.text("입력 내용을 확인해 주세요.")
     }
 
     private func movedSelection(

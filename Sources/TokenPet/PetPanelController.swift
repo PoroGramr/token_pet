@@ -6,6 +6,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     private static let panelSize = NSSize(width: 120, height: 120)
     private let loginItemManager: LoginItemManager
     private let characterRepository: CharacterRepository
+    private let languageSettings: LanguageSettings
     private let panel: NSPanel
     private let petView: PetView
     private let menu = NSMenu()
@@ -26,10 +27,16 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     var onLogin: (() -> Void)?
     var onCredentialFallbackChanged: (() -> Void)?
     var onManageCharacters: (() -> Void)?
+    var onLanguageChanged: (() -> Void)?
 
-    init(loginItemManager: LoginItemManager, characterRepository: CharacterRepository) {
+    init(
+        loginItemManager: LoginItemManager,
+        characterRepository: CharacterRepository,
+        languageSettings: LanguageSettings
+    ) {
         self.loginItemManager = loginItemManager
         self.characterRepository = characterRepository
+        self.languageSettings = languageSettings
         petView = PetView(frame: NSRect(origin: .zero, size: Self.panelSize))
         panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: Self.panelSize),
@@ -72,11 +79,11 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         transientError = nil
         loginItem.state = loginItemManager.isEnabled ? .on : .off
         credentialFallbackItem.state = isCredentialFallbackAllowed ? .on : .off
-        statusItem.title = CharacterMenuStatusPresentation.message(
+        statusItem.title = languageSettings.text(CharacterMenuStatusPresentation.message(
             pendingError: pendingError,
             refreshNotice: rebuildCharacterMenu(),
             usageMessage: WidgetPresentation(state: state).statusMessage
-        )
+        ))
     }
 
     private func configurePanel() {
@@ -93,33 +100,47 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     }
 
     private func configureMenu() {
+        menu.removeAllItems()
         menu.delegate = self
         statusItem.isEnabled = false
         menu.addItem(statusItem)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "새로고침", action: #selector(refresh), keyEquivalent: "r").target = self
-        menu.addItem(withTitle: "우측 하단으로 이동", action: #selector(resetPosition), keyEquivalent: "") .target = self
+        menu.addItem(withTitle: languageSettings.text("새로고침"), action: #selector(refresh), keyEquivalent: "r").target = self
+        menu.addItem(withTitle: languageSettings.text("우측 하단으로 이동"), action: #selector(resetPosition), keyEquivalent: "") .target = self
         for descriptor in CharacterMenuStructureDescriptor.standard.rootItems {
             switch descriptor.role {
             case .characterSubmenu:
-                let characterItem = NSMenuItem(title: descriptor.title, action: nil, keyEquivalent: "")
+                let characterItem = NSMenuItem(title: languageSettings.text(descriptor.title), action: nil, keyEquivalent: "")
                 characterItem.submenu = characterMenu
                 menu.addItem(characterItem)
             case .manageCharacters:
                 menu.addItem(
-                    withTitle: descriptor.title,
+                    withTitle: languageSettings.text(descriptor.title),
                     action: #selector(manageCharacters),
                     keyEquivalent: ""
                 ).target = self
             }
         }
-        menu.addItem(withTitle: "Claude Code 로그인", action: #selector(login), keyEquivalent: "").target = self
+        let languageItem = NSMenuItem(title: languageSettings.text("언어"), action: nil, keyEquivalent: "")
+        let languageMenu = NSMenu()
+        for language in AppLanguage.allCases {
+            let item = NSMenuItem(title: language.menuTitle, action: #selector(selectLanguage(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = language.rawValue
+            item.state = language == languageSettings.language ? .on : .off
+            languageMenu.addItem(item)
+        }
+        languageItem.submenu = languageMenu
+        menu.addItem(languageItem)
+        menu.addItem(withTitle: languageSettings.text("Claude Code 로그인"), action: #selector(login), keyEquivalent: "").target = self
+        credentialFallbackItem.title = languageSettings.text("Apple security fallback 허용")
         credentialFallbackItem.target = self
         menu.addItem(credentialFallbackItem)
         loginItem.target = self
         menu.addItem(loginItem)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "종료", action: #selector(quit), keyEquivalent: "q").target = self
+        loginItem.title = languageSettings.text("로그인 시 실행")
+        menu.addItem(withTitle: languageSettings.text("종료"), action: #selector(quit), keyEquivalent: "q").target = self
         petView.contextMenu = menu
     }
 
@@ -133,7 +154,10 @@ final class PetPanelController: NSObject, NSMenuDelegate {
 
         characterMenu.removeAllItems()
         for entry in CharacterMenuStructureDescriptor.standard.selectionItems(for: snapshot) {
-            let item = NSMenuItem(title: entry.title, action: #selector(selectCharacter(_:)), keyEquivalent: "")
+            let title = entry.representedID == CharacterRepository.builtInID.uuidString
+                ? languageSettings.text(entry.title)
+                : entry.title
+            let item = NSMenuItem(title: title, action: #selector(selectCharacter(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = entry.representedID
             item.state = entry.isSelected ? .on : .off
@@ -193,9 +217,18 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     @objc private func manageCharacters() { onManageCharacters?() }
     @objc private func quit() { NSApp.terminate(nil) }
 
+    @objc private func selectLanguage(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let language = AppLanguage(rawValue: rawValue),
+              language != languageSettings.language else { return }
+        languageSettings.language = language
+        configureMenu()
+        onLanguageChanged?()
+    }
+
     @objc private func selectCharacter(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String, let id = UUID(uuidString: value) else {
-            transientError = "캐릭터 선택 정보를 확인하지 못했습니다"
+            transientError = languageSettings.text("캐릭터 선택 정보를 확인하지 못했습니다")
             return
         }
         do {
@@ -207,7 +240,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
             )
             let reconciliation = CharacterRuntimeReconciliation.afterSelectionAttemptFailed(current: currentState)
             _ = apply(reconciliation.decision)
-            transientError = "캐릭터를 불러오지 못했습니다. 기존 캐릭터를 계속 표시합니다"
+            transientError = languageSettings.text("캐릭터를 불러오지 못했습니다. 기존 캐릭터를 계속 표시합니다")
         }
     }
 
@@ -229,7 +262,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         do {
             try loginItemManager.setEnabled(!loginItemManager.isEnabled)
         } catch {
-            transientError = "로그인 시 실행 설정을 변경하지 못했습니다"
+            transientError = languageSettings.text("로그인 시 실행 설정을 변경하지 못했습니다")
         }
     }
 
@@ -254,10 +287,10 @@ final class PetPanelController: NSObject, NSMenuDelegate {
 
     private func requestCredentialFallbackConsent() {
         let alert = NSAlert()
-        alert.messageText = "Apple security fallback을 허용할까요?"
-        alert.informativeText = "TokenPet은 Apple의 /usr/bin/security를 사용해 Claude Code 인증 정보를 읽기만 합니다. 토큰은 저장하거나 로그에 남기지 않습니다."
-        alert.addButton(withTitle: "허용")
-        alert.addButton(withTitle: "취소")
+        alert.messageText = languageSettings.text("Apple security fallback을 허용할까요?")
+        alert.informativeText = languageSettings.text("TokenPet은 Apple의 /usr/bin/security를 사용해 Claude Code 인증 정보를 읽기만 합니다. 토큰은 저장하거나 로그에 남기지 않습니다.")
+        alert.addButton(withTitle: languageSettings.text("허용"))
+        alert.addButton(withTitle: languageSettings.text("취소"))
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         UserDefaults.standard.set(true, forKey: CredentialFallbackPolicy.userDefaultsKey)
