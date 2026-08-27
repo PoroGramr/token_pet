@@ -24,6 +24,13 @@ public enum CharacterStoreError: Error, Equatable, Sendable {
 public protocol CharacterStoreCommitBoundary: Sendable {
     func replaceItem(at targetURL: URL, withStagingItemAt stagingURL: URL, backupItemURL: URL) throws
     func removeOldBackup(at backupURL: URL) throws
+    func removeTransactionArtifact(at artifactURL: URL) throws
+}
+
+public extension CharacterStoreCommitBoundary {
+    func removeTransactionArtifact(at artifactURL: URL) throws {
+        try removeOldBackup(at: artifactURL)
+    }
 }
 
 private final class FileManagerCommitBoundary: @unchecked Sendable, CharacterStoreCommitBoundary {
@@ -186,6 +193,13 @@ public final class CharacterStore: @unchecked Sendable {
             let root = try checkedRoot(createIfMissing: false)
             let targetURL = directoryURL(for: id, root: root)
             try checkedProfileDirectory(targetURL, inside: root)
+            let artifacts = try transactionArtifactURLs(for: id, root: root)
+            guard !artifacts.contains(where: isSymbolicLink) else {
+                throw CharacterStoreError.persistenceFailed
+            }
+            for artifactURL in artifacts {
+                try commitBoundary.removeTransactionArtifact(at: artifactURL)
+            }
             try fileManager.removeItem(at: targetURL)
             if selectedCharacterID == id { selectedCharacterID = nil }
         } catch let error as CharacterStoreError {
@@ -352,18 +366,40 @@ public final class CharacterStore: @unchecked Sendable {
     }
 
     private func expectedID(fromBackupURL backupURL: URL) -> UUID? {
-        let prefix = ".backup-"
-        let name = backupURL.lastPathComponent
+        transactionArtifactID(from: backupURL, prefix: ".backup-")
+    }
+
+    private func transactionArtifactURLs(for id: UUID, root: URL) throws -> [URL] {
+        try fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isSymbolicLinkKey],
+            options: []
+        )
+        .filter { artifactURL in
+            let parent = artifactURL.deletingLastPathComponent().standardizedFileURL
+            guard parent == root.standardizedFileURL else { return false }
+            return transactionArtifactID(from: artifactURL, prefix: ".backup-") == id
+                || transactionArtifactID(from: artifactURL, prefix: ".invalid-target-") == id
+        }
+        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    private func transactionArtifactID(from artifactURL: URL, prefix: String) -> UUID? {
+        let name = artifactURL.lastPathComponent
         guard name.hasPrefix(prefix) else { return nil }
         let remainder = name.dropFirst(prefix.count)
         guard remainder.count == 73 else { return nil }
         let idEnd = remainder.index(remainder.startIndex, offsetBy: 36)
         guard remainder[idEnd] == "-" else { return nil }
         let nonceStart = remainder.index(after: idEnd)
+        let idText = String(remainder[..<idEnd])
+        let nonceText = String(remainder[nonceStart...])
         guard
-            let id = UUID(uuidString: String(remainder[..<idEnd])),
+            let id = UUID(uuidString: idText),
+            idText.uppercased() == id.uuidString,
             id != Self.builtInCharacterID,
-            UUID(uuidString: String(remainder[nonceStart...])) != nil
+            let nonce = UUID(uuidString: nonceText),
+            nonceText.uppercased() == nonce.uuidString
         else {
             return nil
         }

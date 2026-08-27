@@ -82,6 +82,20 @@ private final class CleanupFailureBoundary: @unchecked Sendable, CharacterStoreC
     }
 }
 
+private final class ArtifactCleanupFailureBoundary: @unchecked Sendable, CharacterStoreCommitBoundary {
+    func replaceItem(at targetURL: URL, withStagingItemAt stagingURL: URL, backupItemURL: URL) throws {
+        throw InjectedCommitError.replacement
+    }
+
+    func removeOldBackup(at backupURL: URL) throws {
+        try FileManager.default.removeItem(at: backupURL)
+    }
+
+    func removeTransactionArtifact(at artifactURL: URL) throws {
+        throw InjectedCommitError.cleanup
+    }
+}
+
 private func makeImageFixture(
     type: UTType,
     pixelSize: Int,
@@ -181,6 +195,10 @@ private func writeAssets(_ assets: CharacterAssets, to directory: URL) throws {
 
 private func backupURL(for id: UUID, root: URL) -> URL {
     root.appendingPathComponent(".backup-\(id.uuidString)-\(UUID().uuidString)", isDirectory: true)
+}
+
+private func invalidTargetURL(for id: UUID, root: URL) -> URL {
+    root.appendingPathComponent(".invalid-target-\(id.uuidString)-\(UUID().uuidString)", isDirectory: true)
 }
 
 private func testSavesLoadsListsAndClearsSelection() throws {
@@ -505,6 +523,119 @@ private func testCleanupFailureKeepsCommittedReplacement() throws {
     if runner.failures > 0 { exit(1) }
 }
 
+private func testDeleteRemovesOnlyMatchingTransactionArtifactsBeforeRecovery() throws {
+    let runner = TestRunner()
+    try withStore { store, root, defaults in
+        let profile = makeProfile()
+        let original = makeAssets(profile: profile)
+        try store.save(original)
+
+        var replacement = original
+        replacement.frames[0] = replacementPNG
+        let cleanupFailureStore = CharacterStore(
+            rootURL: root,
+            defaults: defaults,
+            commitBoundary: CleanupFailureBoundary()
+        )
+        try cleanupFailureStore.save(replacement)
+
+        let invalidBackup = backupURL(for: profile.id, root: root)
+        try FileManager.default.createDirectory(at: invalidBackup, withIntermediateDirectories: false)
+        let invalidTarget = invalidTargetURL(for: profile.id, root: root)
+        try FileManager.default.createDirectory(at: invalidTarget, withIntermediateDirectories: false)
+
+        let otherID = UUID()
+        let otherArtifact = backupURL(for: otherID, root: root)
+        try FileManager.default.createDirectory(at: otherArtifact, withIntermediateDirectories: false)
+
+        store.selectedCharacterID = profile.id
+        try store.delete(id: profile.id)
+
+        runner.expectEqual(store.selectedCharacterID, nil, "explicit delete clears selected ID after artifact cleanup")
+        let afterDeleteEntries = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        runner.expectTrue(
+            !afterDeleteEntries.contains(where: {
+                $0.hasPrefix(".backup-\(profile.id.uuidString)-")
+                    || $0.hasPrefix(".invalid-target-\(profile.id.uuidString)-")
+            }),
+            "explicit delete removes matching backup and invalid-target artifacts"
+        )
+        runner.expectTrue(
+            FileManager.default.fileExists(atPath: otherArtifact.path),
+            "explicit delete leaves another character artifact untouched"
+        )
+
+        let relaunchedStore = CharacterStore(rootURL: root, defaults: defaults)
+        runner.expectEqual(try relaunchedStore.list(), [], "deleted character is not restored by orphan recovery")
+        runner.expectTrue(
+            FileManager.default.fileExists(atPath: otherArtifact.path),
+            "relaunch leaves unrelated invalid artifact untouched"
+        )
+    }
+    if runner.failures > 0 { exit(1) }
+}
+
+private func testDeletePreservesCanonicalTargetAndSelectionWhenArtifactCleanupFails() throws {
+    let runner = TestRunner()
+    try withStore { store, root, defaults in
+        let profile = makeProfile()
+        let original = makeAssets(profile: profile)
+        try store.save(original)
+        store.selectedCharacterID = profile.id
+
+        let target = root.appendingPathComponent(profile.id.uuidString)
+        let orphanBackup = backupURL(for: profile.id, root: root)
+        try FileManager.default.copyItem(at: target, to: orphanBackup)
+
+        let failingStore = CharacterStore(
+            rootURL: root,
+            defaults: defaults,
+            commitBoundary: ArtifactCleanupFailureBoundary()
+        )
+        expectThrows(
+            { try failingStore.delete(id: profile.id) },
+            "artifact cleanup failure rejects delete",
+            runner: runner
+        )
+
+        runner.expectEqual(try store.load(id: profile.id), original, "artifact cleanup failure preserves canonical assets")
+        runner.expectEqual(store.selectedCharacterID, profile.id, "artifact cleanup failure preserves selected ID")
+        runner.expectTrue(
+            FileManager.default.fileExists(atPath: orphanBackup.path),
+            "artifact cleanup failure preserves pending backup"
+        )
+    }
+    if runner.failures > 0 { exit(1) }
+}
+
+private func testDeleteRejectsMatchingArtifactSymlinkWithoutFollowingIt() throws {
+    let runner = TestRunner()
+    let external = FileManager.default.temporaryDirectory.appendingPathComponent("external-artifact-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: external, withIntermediateDirectories: false)
+    let marker = external.appendingPathComponent("marker")
+    try Data("outside".utf8).write(to: marker)
+    defer { try? FileManager.default.removeItem(at: external) }
+
+    try withStore { store, root, _ in
+        let profile = makeProfile()
+        let original = makeAssets(profile: profile)
+        try store.save(original)
+        store.selectedCharacterID = profile.id
+        let linkedArtifact = backupURL(for: profile.id, root: root)
+        try FileManager.default.createSymbolicLink(at: linkedArtifact, withDestinationURL: external)
+
+        expectThrows(
+            { try store.delete(id: profile.id) },
+            "matching artifact symlink rejects delete",
+            runner: runner
+        )
+        runner.expectEqual(try store.load(id: profile.id), original, "artifact symlink rejection preserves canonical assets")
+        runner.expectEqual(store.selectedCharacterID, profile.id, "artifact symlink rejection preserves selected ID")
+        runner.expectTrue(FileManager.default.fileExists(atPath: marker.path), "artifact symlink rejection never follows outside root")
+    }
+    if runner.failures > 0 { exit(1) }
+}
+
 private func testCharacterDraftReordersAndValidates() {
     let runner = TestRunner()
     let first = Data("first".utf8)
@@ -593,6 +724,9 @@ do {
     try testCommitFailureRestoresBackupAfterTargetWasMoved()
     try testStartupRecoveryUsesOnlyValidExpectedBackups()
     try testCleanupFailureKeepsCommittedReplacement()
+    try testDeleteRejectsMatchingArtifactSymlinkWithoutFollowingIt()
+    try testDeletePreservesCanonicalTargetAndSelectionWhenArtifactCleanupFails()
+    try testDeleteRemovesOnlyMatchingTransactionArtifactsBeforeRecovery()
     testCharacterDraftReordersAndValidates()
     testCharacterDraftNormalizesStoredFrameOrderExactlyOnce()
     try testRuntimeValidationRejectsDamagedFrameBeforePersistence()
