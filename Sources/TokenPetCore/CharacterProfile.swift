@@ -49,7 +49,7 @@ public enum CharacterProfileValidator {
             errors.append("duplicateName")
         }
         if !(3...4).contains(profile.frameCount) { errors.append("frameCount") }
-        if profile.frameOrder != Array(0..<profile.frameCount) { errors.append("frameOrder") }
+        if profile.frameOrder.sorted() != Array(0..<profile.frameCount) { errors.append("frameOrder") }
         if !(0...1).contains(profile.percentPosition.x) || !(0...1).contains(profile.percentPosition.y) { errors.append("percentPosition") }
         if !(10...36).contains(profile.percentFontSize) { errors.append("percentFontSize") }
         if profile.framesPerSecond != 3 { errors.append("framesPerSecond") }

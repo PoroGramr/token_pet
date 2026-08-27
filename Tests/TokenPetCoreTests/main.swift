@@ -210,6 +210,35 @@ private func testCharacterProfileAndPercentLayoutContracts() throws {
     var invalidFrames = threeFrame
     invalidFrames.frameCount = 5
     runner.expectTrue(!CharacterProfileValidator.validate(invalidFrames, existingNames: []).isEmpty, "five user frames rejected")
+
+    var reordered = threeFrame
+    reordered.frameOrder = [2, 0, 1]
+    runner.expectTrue(CharacterProfileValidator.validate(reordered, existingNames: []).isEmpty, "valid reordered permutation accepted")
+    var duplicateIndex = threeFrame
+    duplicateIndex.frameOrder = [0, 1, 1]
+    runner.expectTrue(!CharacterProfileValidator.validate(duplicateIndex, existingNames: []).isEmpty, "duplicate frame index rejected")
+    var missingIndex = threeFrame
+    missingIndex.frameOrder = [0, 1, 3]
+    runner.expectTrue(!CharacterProfileValidator.validate(missingIndex, existingNames: []).isEmpty, "missing frame index rejected")
+
+    var shortName = threeFrame
+    shortName.name = "   "
+    runner.expectTrue(!CharacterProfileValidator.validate(shortName, existingNames: []).isEmpty, "blank name rejected")
+    var invalidPosition = threeFrame
+    invalidPosition.percentPosition = NormalizedPoint(x: 1.01, y: 0)
+    runner.expectTrue(!CharacterProfileValidator.validate(invalidPosition, existingNames: []).isEmpty, "out of range position rejected")
+    var minimumFont = threeFrame
+    minimumFont.percentFontSize = 10
+    runner.expectTrue(CharacterProfileValidator.validate(minimumFont, existingNames: []).isEmpty, "minimum font accepted")
+    var maximumFont = threeFrame
+    maximumFont.percentFontSize = 36
+    runner.expectTrue(CharacterProfileValidator.validate(maximumFont, existingNames: []).isEmpty, "maximum font accepted")
+    var invalidFPS = threeFrame
+    invalidFPS.framesPerSecond = 2
+    runner.expectTrue(!CharacterProfileValidator.validate(invalidFPS, existingNames: []).isEmpty, "invalid FPS rejected")
+    var invalidSchema = threeFrame
+    invalidSchema.schemaVersion = 2
+    runner.expectTrue(!CharacterProfileValidator.validate(invalidSchema, existingNames: []).isEmpty, "invalid schema rejected")
 }
 
 @MainActor
