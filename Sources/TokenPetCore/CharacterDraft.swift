@@ -50,11 +50,15 @@ public struct CharacterDraft: Equatable, Sendable {
     }
 
     public init(assets: CharacterAssets) {
+        let order = assets.profile.frameOrder
+        let canNormalizeOrder = order.sorted() == Array(0..<assets.profile.frameCount)
+            && assets.sources.count == assets.profile.frameCount
+            && assets.frames.count == assets.profile.frameCount
         self.init(
             id: assets.profile.id,
             name: assets.profile.name,
-            sourceFrames: assets.sources,
-            displayFrames: assets.frames,
+            sourceFrames: canNormalizeOrder ? order.map { assets.sources[$0] } : assets.sources,
+            displayFrames: canNormalizeOrder ? order.map { assets.frames[$0] } : assets.frames,
             removesLightBackground: assets.profile.removesLightBackground,
             percentPosition: assets.profile.percentPosition,
             percentFontSize: assets.profile.percentFontSize

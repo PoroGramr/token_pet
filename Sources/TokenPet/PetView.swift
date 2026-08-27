@@ -71,23 +71,12 @@ final class PetView: NSView {
             image.draw(in: destination, from: .zero, operation: .sourceOver, fraction: 1)
         }
 
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: percentFontSize, weight: .heavy),
-            .foregroundColor: NSColor.white,
-            .strokeColor: NSColor(calibratedRed: 0.01, green: 0.08, blue: 0.22, alpha: 1),
-            .strokeWidth: -3,
-            .paragraphStyle: paragraph
-        ]
-        let measuredTextSize = (presentation.text as NSString).size(withAttributes: attributes)
-        let textRect = PercentLayout.textRect(
-            containerSize: bounds.size,
+        PercentTextDrawing.draw(
+            text: presentation.text,
+            in: bounds,
             position: percentPosition,
-            fontSize: percentFontSize,
-            measuredTextSize: measuredTextSize
+            fontSize: percentFontSize
         )
-        presentation.text.draw(in: textRect, withAttributes: attributes)
 
         if presentation.showsWarning {
             let warningAttributes: [NSAttributedString.Key: Any] = [

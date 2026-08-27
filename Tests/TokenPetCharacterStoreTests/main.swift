@@ -298,6 +298,62 @@ private func testCharacterDraftReordersAndValidates() {
     if runner.failures > 0 { exit(1) }
 }
 
+private func testCharacterDraftNormalizesStoredFrameOrderExactlyOnce() {
+    let runner = TestRunner()
+    var profile = makeProfile()
+    profile.frameOrder = [2, 0, 1]
+    let sourceA = Data("source-A".utf8)
+    let sourceB = Data("source-B".utf8)
+    let sourceC = Data("source-C".utf8)
+    let frameA = Data("frame-A".utf8)
+    let frameB = Data("frame-B".utf8)
+    let frameC = Data("frame-C".utf8)
+    let stored = CharacterAssets(
+        profile: profile,
+        sources: [sourceA, sourceB, sourceC],
+        frames: [frameA, frameB, frameC]
+    )
+
+    let draft = CharacterDraft(assets: stored)
+    let roundTrip = CharacterAssets(
+        profile: draft.profile,
+        sources: draft.sourceFrames,
+        frames: draft.displayFrames
+    )
+    let playbackFrames = roundTrip.profile.frameOrder.map { roundTrip.frames[$0] }
+
+    runner.expectEqual(draft.sourceFrames, [sourceC, sourceA, sourceB], "stored source order normalized once")
+    runner.expectEqual(draft.displayFrames, [frameC, frameA, frameB], "stored display order normalized once")
+    runner.expectEqual(roundTrip.profile.frameOrder, [0, 1, 2], "normalized draft saves identity order")
+    runner.expectEqual(playbackFrames, [frameC, frameA, frameB], "round-trip playback preserves C A B")
+    if runner.failures > 0 { exit(1) }
+}
+
+private func testRuntimeValidationRejectsDamagedFrameBeforePersistence() throws {
+    let runner = TestRunner()
+    let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
+    try withStore { store, _, _ in
+        let profile = makeProfile()
+        let original = CharacterAssets(
+            profile: profile,
+            sources: [png, png, png],
+            frames: [png, png, png]
+        )
+        try store.save(original)
+
+        try CharacterRuntimeAssetValidator.validate(original)
+        var damaged = original
+        damaged.frames[1] = Data("not-an-image".utf8)
+        expectThrows(
+            { try CharacterRuntimeAssetValidator.validate(damaged) },
+            "damaged runtime frame rejected before save",
+            runner: runner
+        )
+        runner.expectEqual(try store.load(id: profile.id), original, "preflight failure preserves stored assets")
+    }
+    if runner.failures > 0 { exit(1) }
+}
+
 do {
     try testSavesLoadsListsAndClearsSelection()
     testClearsMalformedSelectedCharacterID()
@@ -307,6 +363,8 @@ do {
     try testCommitFailurePreservesExistingTargetAndCleansStaging()
     try testCleanupFailureKeepsCommittedReplacement()
     testCharacterDraftReordersAndValidates()
+    testCharacterDraftNormalizesStoredFrameOrderExactlyOnce()
+    try testRuntimeValidationRejectsDamagedFrameBeforePersistence()
     print("PASS: TokenPetCharacterStoreTests")
 } catch {
     print("FAIL: unexpected error — \(error)")

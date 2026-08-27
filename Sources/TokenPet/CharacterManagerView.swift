@@ -344,7 +344,11 @@ private struct CharacterAnimationPreview: View {
                             .scaledToFit()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    outlinedPercent(in: geometry.size)
+                    PercentAttributedPreview(
+                        position: draft.percentPosition,
+                        fontSize: draft.percentFontSize * max(0.01, min(geometry.size.width, geometry.size.height) / 120)
+                    )
+                    .allowsHitTesting(false)
                 }
                 .contentShape(Rectangle())
                 .gesture(
@@ -374,32 +378,35 @@ private struct CharacterAnimationPreview: View {
         return NSImage(data: draft.displayFrames[frameIndex])
     }
 
-    private func outlinedPercent(in size: CGSize) -> some View {
-        let previewScale = max(0.01, min(size.width, size.height) / 120)
-        let previewFontSize = draft.percentFontSize * previewScale
-        let font = NSFont.systemFont(ofSize: previewFontSize, weight: .heavy)
-        let measured = ("72%" as NSString).size(withAttributes: [.font: font])
-        let rect = PercentLayout.textRect(
-            containerSize: size,
-            position: draft.percentPosition,
-            fontSize: previewFontSize,
-            measuredTextSize: measured
-        )
-        let center = CGPoint(x: rect.midX, y: size.height - rect.midY)
-        let outline = Color(nsColor: NSColor(calibratedRed: 0.01, green: 0.08, blue: 0.22, alpha: 1))
-        let outlineOffset = max(1, previewFontSize * 0.04)
+}
 
-        return ZStack {
-            ForEach(Array([CGSize(width: -outlineOffset, height: 0), .init(width: outlineOffset, height: 0), .init(width: 0, height: -outlineOffset), .init(width: 0, height: outlineOffset)].enumerated()), id: \.offset) { _, offset in
-                Text("72%")
-                    .font(.system(size: previewFontSize, weight: .heavy))
-                    .foregroundStyle(outline)
-                    .position(x: center.x + offset.width, y: center.y + offset.height)
-            }
-            Text("72%")
-                .font(.system(size: previewFontSize, weight: .heavy))
-                .foregroundStyle(.white)
-                .position(center)
-        }
+private struct PercentAttributedPreview: NSViewRepresentable {
+    let position: NormalizedPoint
+    let fontSize: Double
+
+    func makeNSView(context: Context) -> PercentAttributedPreviewView {
+        PercentAttributedPreviewView()
+    }
+
+    func updateNSView(_ nsView: PercentAttributedPreviewView, context: Context) {
+        nsView.position = position
+        nsView.fontSize = fontSize
+        nsView.needsDisplay = true
+    }
+}
+
+private final class PercentAttributedPreviewView: NSView {
+    var position = NormalizedPoint(x: 0.5, y: 0.5)
+    var fontSize: Double = 22
+    override var isFlipped: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        PercentTextDrawing.draw(
+            text: "72%",
+            in: bounds,
+            position: position,
+            fontSize: fontSize
+        )
     }
 }

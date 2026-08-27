@@ -166,15 +166,34 @@ final class CharacterManagerModel: ObservableObject {
         }
 
         candidate.name = candidate.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let assets = CharacterAssets(
+            profile: candidate.profile,
+            sources: candidate.sourceFrames,
+            frames: candidate.displayFrames
+        )
+        let preparedRuntime: RuntimeCharacter
         do {
-            let assets = CharacterAssets(
-                profile: candidate.profile,
-                sources: candidate.sourceFrames,
-                frames: candidate.displayFrames
+            try CharacterRuntimeAssetValidator.validate(assets)
+            let orderedFrames = try assets.profile.frameOrder.map { frameIndex -> NSImage in
+                guard let image = NSImage(data: assets.frames[frameIndex]) else {
+                    throw CharacterRuntimeAssetError.undecodableFrame(frameIndex)
+                }
+                return image
+            }
+            preparedRuntime = RuntimeCharacter(
+                profile: assets.profile,
+                frames: orderedFrames,
+                playbackIndices: FrameSequence.indices(frameCount: orderedFrames.count)
             )
+        } catch {
+            errorMessage = "표시할 수 없는 이미지가 있어 저장하지 않았습니다. 기존 캐릭터는 그대로 유지됩니다."
+            return
+        }
+
+        do {
             try store.save(assets)
-            let runtime = try repository.select(id: candidate.id)
-            onApply(runtime)
+            store.selectedCharacterID = candidate.id
+            onApply(preparedRuntime)
             draft = candidate
             selectedID = candidate.id
             profiles = repository.availableCharacters()
