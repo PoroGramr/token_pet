@@ -3,6 +3,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import TokenPetCore
+import UniformTypeIdentifiers
 
 private final class TestRunner {
     var failures = 0
@@ -274,6 +275,97 @@ private func testPreparesNormalizedTransparentBundleFrames() throws {
 }
 
 @MainActor
+private func testReversibleFrameProcessingPreservesSourceUntilDisplayRemoval() throws {
+    let opaqueInput = try Data(contentsOf: URL(fileURLWithPath: "img/2.png"))
+    let source = try FrameImageProcessor.makeNormalizedSourcePNG(from: opaqueInput, pixelSize: 240)
+    let preserved = try FrameImageProcessor.makeDisplayPNG(fromNormalizedSource: source, removingLightBackground: false)
+    let removed = try FrameImageProcessor.makeDisplayPNG(fromNormalizedSource: source, removingLightBackground: true)
+
+    runner.expectEqual(alphaValue(in: try decodePNG(preserved), x: 0, y: 0), 0, "aspect-fit margin preserved")
+    runner.expectEqual(alphaValue(in: try decodePNG(removed), x: 0, y: 0), 0, "background removed")
+}
+
+@MainActor
+private func testReversibleProcessingHandlesNonSquareJPEGAndAlphaPNG() throws {
+    let jpeg = try makeOpaqueJPEGFixture()
+    let normalizedJPEG = try FrameImageProcessor.makeNormalizedSourcePNG(from: jpeg, pixelSize: 240)
+    let normalizedImage = try decodePNG(normalizedJPEG)
+    runner.expectEqual(normalizedImage.width, 240, "JPEG normalized width")
+    runner.expectEqual(normalizedImage.height, 240, "JPEG normalized height")
+    runner.expectEqual(alphaValue(in: normalizedImage, x: 0, y: 0), 0, "JPEG aspect-fit margin transparent")
+    runner.expectEqual(alphaValue(in: normalizedImage, x: 120, y: 120), 255, "JPEG source area opaque")
+
+    let preservedJPEG = try FrameImageProcessor.makeDisplayPNG(fromNormalizedSource: normalizedJPEG, removingLightBackground: false)
+    let preservedImage = try decodePNG(preservedJPEG)
+    runner.expectEqual(alphaValue(in: preservedImage, x: 0, y: 0), 0, "display false preserves JPEG margin")
+    runner.expectEqual(pixelValue(in: preservedImage, x: 120, y: 120), pixelValue(in: normalizedImage, x: 120, y: 120), "display false preserves JPEG pixel")
+    let removedJPEG = try FrameImageProcessor.makeDisplayPNG(fromNormalizedSource: normalizedJPEG, removingLightBackground: true)
+    runner.expectEqual(alphaValue(in: try decodePNG(removedJPEG), x: 0, y: 0), 0, "display true removes connected light background")
+
+    let alphaSource = try FrameImageProcessor.makeNormalizedSourcePNG(
+        from: Data(contentsOf: URL(fileURLWithPath: "img/1.png")), pixelSize: 240
+    )
+    let alphaPreserved = try FrameImageProcessor.makeDisplayPNG(fromNormalizedSource: alphaSource, removingLightBackground: false)
+    let alphaPreservedImage = try decodePNG(alphaPreserved)
+    let alphaSourceImage = try decodePNG(alphaSource)
+    runner.expectEqual(alphaValue(in: alphaPreservedImage, x: 0, y: 0), 0, "alpha PNG transparency preserved")
+    runner.expectEqual(pixelValue(in: alphaPreservedImage, x: 120, y: 120), pixelValue(in: alphaSourceImage, x: 120, y: 120), "display false preserves alpha PNG pixel")
+}
+
+private func decodePNG(_ data: Data) throws -> CGImage {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        throw FrameImageError.invalidImage
+    }
+    return image
+}
+
+private func pixelValue(in image: CGImage, x: Int, y: Int) -> [UInt8] {
+    var pixel = [UInt8](repeating: 0, count: 4)
+    let context = CGContext(
+        data: &pixel,
+        width: 1,
+        height: 1,
+        bitsPerComponent: 8,
+        bytesPerRow: 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    )!
+    context.translateBy(x: CGFloat(-x), y: CGFloat(-(image.height - y - 1)))
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    return pixel
+}
+
+private func makeOpaqueJPEGFixture() throws -> Data {
+    var pixels = [UInt8](repeating: 255, count: 80 * 40 * 4)
+    guard let context = CGContext(
+        data: &pixels,
+        width: 80,
+        height: 40,
+        bitsPerComponent: 8,
+        bytesPerRow: 80 * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
+        throw FrameImageError.contextCreationFailed
+    }
+    context.setFillColor(CGColor(red: 0.1, green: 0.2, blue: 0.8, alpha: 1))
+    context.fill(CGRect(x: 20, y: 10, width: 40, height: 20))
+    guard let image = context.makeImage() else {
+        throw FrameImageError.invalidImage
+    }
+    let output = NSMutableData()
+    guard let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else {
+        throw FrameImageError.invalidImage
+    }
+    CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 1.0] as CFDictionary)
+    guard CGImageDestinationFinalize(destination) else {
+        throw FrameImageError.invalidImage
+    }
+    return output as Data
+}
+
+@MainActor
 private func testPositionsPanelAtBottomRightAndClampsOffscreenOrigin() {
     let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
     let panelSize = CGSize(width: 120, height: 120)
@@ -394,6 +486,8 @@ do {
     try testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames()
     try testPreservesExistingTransparency()
     try testPreparesNormalizedTransparentBundleFrames()
+    try testReversibleFrameProcessingPreservesSourceUntilDisplayRemoval()
+    try testReversibleProcessingHandlesNonSquareJPEGAndAlphaPNG()
     testPositionsPanelAtBottomRightAndClampsOffscreenOrigin()
     testMapsUsageStatesToWidgetPresentation()
     try testScreenshotCharacterIsUprightIfRequested()

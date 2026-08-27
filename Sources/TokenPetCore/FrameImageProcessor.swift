@@ -20,8 +20,18 @@ public enum FrameImageError: Error, Equatable, Sendable {
 
 public enum FrameImageProcessor {
     public static func makeNormalizedPNG(from data: Data, pixelSize: Int) throws -> Data {
+        let source = try makeNormalizedSourcePNG(from: data, pixelSize: pixelSize)
+        return try makeDisplayPNG(fromNormalizedSource: source, removingLightBackground: true)
+    }
+
+    public static func makeNormalizedSourcePNG(from data: Data, pixelSize: Int) throws -> Data {
         guard pixelSize > 0 else { throw FrameImageError.invalidImage }
-        let sourceImage = try makeTransparentImage(from: data)
+        guard
+            let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+            let sourceImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+        else {
+            throw FrameImageError.invalidImage
+        }
         let bytesPerRow = pixelSize * 4
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * pixelSize)
         guard let context = CGContext(
@@ -55,6 +65,66 @@ public enum FrameImageProcessor {
             throw FrameImageError.invalidImage
         }
 
+        return try encodePNG(normalizedImage)
+    }
+
+    public static func makeDisplayPNG(
+        fromNormalizedSource data: Data,
+        removingLightBackground: Bool
+    ) throws -> Data {
+        guard
+            let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+            let sourceImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+        else {
+            throw FrameImageError.invalidImage
+        }
+
+        guard removingLightBackground else {
+            return try encodePNG(sourceImage)
+        }
+
+        let width = sourceImage.width
+        let height = sourceImage.height
+        let bytesPerRow = width * 4
+        var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw FrameImageError.contextCreationFailed
+        }
+        context.interpolationQuality = .none
+        context.draw(sourceImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        removeConnectedBackground(from: &pixels, width: width, height: height)
+
+        guard
+            let provider = CGDataProvider(data: Data(pixels) as CFData),
+            let image = CGImage(
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: bytesPerRow,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+            )
+        else {
+            throw FrameImageError.invalidImage
+        }
+        return try encodePNG(image)
+    }
+
+    private static func encodePNG(_ image: CGImage) throws -> Data {
+
         let output = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
             output,
@@ -64,7 +134,7 @@ public enum FrameImageProcessor {
         ) else {
             throw FrameImageError.invalidImage
         }
-        CGImageDestinationAddImage(destination, normalizedImage, nil)
+        CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else {
             throw FrameImageError.invalidImage
         }
