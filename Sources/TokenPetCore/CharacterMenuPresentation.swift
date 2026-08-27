@@ -110,6 +110,7 @@ public enum CharacterMenuRefreshNotice: Equatable, Sendable {
     case none
     case listUnavailable
     case fallbackToBuiltIn
+    case runtimeUnavailable
 }
 
 public enum CharacterMenuStatusPresentation {
@@ -123,6 +124,8 @@ public enum CharacterMenuStatusPresentation {
             return "캐릭터 목록을 불러오지 못했습니다"
         case .fallbackToBuiltIn:
             return "선택한 캐릭터를 불러오지 못해 기본 캐릭터로 돌아갔습니다"
+        case .runtimeUnavailable:
+            return "선택한 캐릭터를 표시하지 못했습니다"
         case .none:
             return pendingError ?? usageMessage
         }

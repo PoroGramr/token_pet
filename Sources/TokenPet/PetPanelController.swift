@@ -10,6 +10,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     private let petView: PetView
     private let menu = NSMenu()
     private let characterMenu = NSMenu()
+    private var displayedCharacterID = CharacterRepository.builtInID
     private let statusItem = NSMenuItem(title: "사용량을 불러오는 중입니다", action: nil, keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "로그인 시 실행", action: #selector(toggleLoginItem), keyEquivalent: "")
     private let credentialFallbackItem = NSMenuItem(
@@ -37,7 +38,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
             defer: false
         )
         super.init()
-        petView.apply(character: characterRepository.selectedCharacter())
+        apply(character: characterRepository.selectedCharacter())
         configurePanel()
         configureMenu()
         restorePosition()
@@ -58,6 +59,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     }
 
     func apply(character: RuntimeCharacter) {
+        displayedCharacterID = character.profile.id
         petView.apply(character: character)
     }
 
@@ -129,10 +131,6 @@ final class PetPanelController: NSObject, NSMenuDelegate {
             return .listUnavailable
         }
 
-        if snapshot.didFallbackToBuiltIn {
-            petView.apply(character: characterRepository.builtInCharacterForDisplay())
-        }
-
         characterMenu.removeAllItems()
         for entry in CharacterMenuStructureDescriptor.standard.selectionItems(for: snapshot) {
             let item = NSMenuItem(title: entry.title, action: #selector(selectCharacter(_:)), keyEquivalent: "")
@@ -140,6 +138,19 @@ final class PetPanelController: NSObject, NSMenuDelegate {
             item.representedObject = entry.representedID
             item.state = entry.isSelected ? .on : .off
             characterMenu.addItem(item)
+        }
+
+        let currentState = CharacterRuntimeSelectionState(
+            displayedID: displayedCharacterID,
+            persistedSelectedID: characterRepository.persistedSelectedCharacterID
+        )
+        let reconciliation = CharacterRuntimeReconciliation.afterSuccessfulCatalog(
+            current: currentState,
+            effectiveSelectedID: snapshot.selectedID,
+            persistedSelectedID: characterRepository.persistedSelectedCharacterID
+        )
+        guard apply(reconciliation.decision) else {
+            return .runtimeUnavailable
         }
         return snapshot.didFallbackToBuiltIn ? .fallbackToBuiltIn : .none
     }
@@ -188,10 +199,29 @@ final class PetPanelController: NSObject, NSMenuDelegate {
             return
         }
         do {
-            petView.apply(character: try characterRepository.select(id: id))
+            apply(character: try characterRepository.select(id: id))
         } catch {
-            petView.apply(character: characterRepository.builtInCharacterForDisplay())
-            transientError = "캐릭터를 불러오지 못해 기본 캐릭터를 표시합니다"
+            let currentState = CharacterRuntimeSelectionState(
+                displayedID: displayedCharacterID,
+                persistedSelectedID: characterRepository.persistedSelectedCharacterID
+            )
+            let reconciliation = CharacterRuntimeReconciliation.afterSelectionAttemptFailed(current: currentState)
+            _ = apply(reconciliation.decision)
+            transientError = "캐릭터를 불러오지 못했습니다. 기존 캐릭터를 계속 표시합니다"
+        }
+    }
+
+    private func apply(_ decision: CharacterRuntimeApplyDecision) -> Bool {
+        switch decision {
+        case .keepCurrent:
+            return true
+        case .apply(let id):
+            do {
+                apply(character: try characterRepository.select(id: id))
+                return true
+            } catch {
+                return false
+            }
         }
     }
 

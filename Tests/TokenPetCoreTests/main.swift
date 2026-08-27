@@ -457,6 +457,72 @@ private func testShowsCharacterRefreshErrorsInCurrentMenuOpening() {
         "로그인 오류",
         "pending menu error remains visible without character error"
     )
+    runner.expectEqual(
+        CharacterMenuStatusPresentation.message(
+            pendingError: nil,
+            refreshNotice: .runtimeUnavailable,
+            usageMessage: "72% 남음"
+        ),
+        "선택한 캐릭터를 표시하지 못했습니다",
+        "runtime reconcile failure is visible in current opening"
+    )
+}
+
+@MainActor
+private func testReconcilesRuntimeDisplayWithoutLosingPersistedSelection() {
+    let builtInID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    let previousID = UUID(uuidString: "66666666-6666-6666-6666-666666666666")!
+    let recoveredID = UUID(uuidString: "77777777-7777-7777-7777-777777777777")!
+
+    let previousState = CharacterRuntimeSelectionState(
+        displayedID: previousID,
+        persistedSelectedID: previousID
+    )
+    let failedSelection = CharacterRuntimeReconciliation.afterSelectionAttemptFailed(current: previousState)
+    runner.expectEqual(failedSelection.state, previousState, "failed selection preserves displayed and persisted IDs")
+    runner.expectEqual(failedSelection.decision, .keepCurrent, "failed selection keeps current runtime")
+
+    let temporaryBuiltIn = CharacterRuntimeSelectionState(
+        displayedID: builtInID,
+        persistedSelectedID: recoveredID
+    )
+    let recovered = CharacterRuntimeReconciliation.afterSuccessfulCatalog(
+        current: temporaryBuiltIn,
+        effectiveSelectedID: recoveredID,
+        persistedSelectedID: recoveredID
+    )
+    runner.expectEqual(recovered.decision, .apply(recoveredID), "catalog recovery reapplies persisted user runtime")
+    runner.expectEqual(recovered.state.persistedSelectedID, recoveredID, "catalog recovery preserves persisted user ID")
+
+    let missing = CharacterRuntimeReconciliation.afterSuccessfulCatalog(
+        current: CharacterRuntimeSelectionState(displayedID: previousID, persistedSelectedID: previousID),
+        effectiveSelectedID: builtInID,
+        persistedSelectedID: nil
+    )
+    runner.expectEqual(missing.decision, .apply(builtInID), "confirmed missing selection applies built-in runtime")
+    runner.expectEqual(missing.state.persistedSelectedID, nil, "confirmed missing selection reflects cleanup")
+}
+
+@MainActor
+private func testEditorRefreshRecoversPersistedSelectionAfterCatalogFailure() {
+    let builtInID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    let userID = UUID(uuidString: "88888888-8888-8888-8888-888888888888")!
+
+    let duringFailure = CharacterEditorSelectionReconciliation.resolve(
+        currentSelectedID: builtInID,
+        persistedSelectedID: userID,
+        builtInID: builtInID,
+        catalog: .unavailable
+    )
+    runner.expectEqual(duringFailure, builtInID, "editor catalog failure preserves current UI selection")
+
+    let afterRecovery = CharacterEditorSelectionReconciliation.resolve(
+        currentSelectedID: duringFailure,
+        persistedSelectedID: userID,
+        builtInID: builtInID,
+        catalog: .available([builtInID, userID])
+    )
+    runner.expectEqual(afterRecovery, userID, "editor successful retry restores persisted user selection")
 }
 
 @MainActor
@@ -704,6 +770,8 @@ do {
     try testPreservesCharacterSelectionAcrossTransientCatalogFailure()
     testDefinesCharacterMenuSiblingStructureAndRepresentedIDs()
     testShowsCharacterRefreshErrorsInCurrentMenuOpening()
+    testReconcilesRuntimeDisplayWithoutLosingPersistedSelection()
+    testEditorRefreshRecoversPersistedSelectionAfterCatalogFailure()
     try testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames()
     try testPreservesExistingTransparency()
     try testPreparesNormalizedTransparentBundleFrames()

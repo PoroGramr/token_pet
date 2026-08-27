@@ -24,7 +24,7 @@ final class CharacterManagerModel: ObservableObject {
         self.store = store
         self.repository = repository
         self.onApply = onApply
-        reloadProfiles(selecting: store.selectedCharacterID ?? CharacterRepository.builtInID)
+        reloadProfiles()
     }
 
     var isBuiltInSelected: Bool { selectedID == CharacterRepository.builtInID }
@@ -35,7 +35,7 @@ final class CharacterManagerModel: ObservableObject {
 
     func refresh() {
         guard !isDirty else { return }
-        reloadProfiles(selecting: selectedID ?? CharacterRepository.builtInID)
+        reloadProfiles()
     }
 
     func createCharacter() {
@@ -202,10 +202,7 @@ final class CharacterManagerModel: ObservableObject {
             return
         }
 
-        do {
-            profiles = try repository.availableCharacters()
-            errorMessage = nil
-        } catch {
+        if !reloadProfiles() {
             errorMessage = "캐릭터는 저장하고 적용했지만 목록을 새로 불러오지 못했습니다."
         }
     }
@@ -223,17 +220,14 @@ final class CharacterManagerModel: ObservableObject {
             draft = nil
             errorMessage = nil
             isDirty = false
-            reloadProfiles(selecting: CharacterRepository.builtInID)
+            reloadProfiles()
         } catch {
             errorMessage = "캐릭터를 삭제하지 못했습니다."
         }
     }
 
     func cancelChanges() {
-        let persistedID = profiles.contains { $0.id == selectedID }
-            ? selectedID
-            : CharacterRepository.builtInID
-        loadSelection(id: persistedID ?? CharacterRepository.builtInID)
+        reloadProfiles()
     }
 
     private func confirmDiscardIfNeeded() -> Bool {
@@ -244,32 +238,47 @@ final class CharacterManagerModel: ObservableObject {
     }
 
     @discardableResult
-    private func reloadProfiles(selecting id: UUID) -> Bool {
+    private func reloadProfiles() -> Bool {
+        let persistedSelectedID = store.selectedCharacterID
         do {
             profiles = try repository.availableCharacters()
         } catch {
+            selectedID = CharacterEditorSelectionReconciliation.resolve(
+                currentSelectedID: selectedID,
+                persistedSelectedID: persistedSelectedID,
+                builtInID: CharacterRepository.builtInID,
+                catalog: .unavailable
+            )
             errorMessage = "캐릭터 목록을 불러오지 못했습니다. 기존 선택은 유지됩니다."
             return false
         }
-        let availableIDs = Set(profiles.map(\.id))
-        loadSelection(id: availableIDs.contains(id) ? id : CharacterRepository.builtInID)
+
+        let targetID = CharacterEditorSelectionReconciliation.resolve(
+            currentSelectedID: selectedID,
+            persistedSelectedID: persistedSelectedID,
+            builtInID: CharacterRepository.builtInID,
+            catalog: .available(Set(profiles.map(\.id)))
+        ) ?? CharacterRepository.builtInID
+        loadSelection(id: targetID)
         return true
     }
 
     private func loadSelection(id: UUID) {
-        selectedID = id
-        errorMessage = nil
-        isDirty = false
         guard id != CharacterRepository.builtInID else {
+            selectedID = id
             draft = nil
+            errorMessage = nil
+            isDirty = false
             return
         }
         do {
-            draft = CharacterDraft(assets: try store.load(id: id))
+            let loadedDraft = CharacterDraft(assets: try store.load(id: id))
+            selectedID = id
+            draft = loadedDraft
+            errorMessage = nil
+            isDirty = false
         } catch {
-            selectedID = CharacterRepository.builtInID
-            draft = nil
-            errorMessage = "캐릭터 데이터를 불러오지 못해 기본 캐릭터를 표시합니다."
+            errorMessage = "캐릭터 데이터를 불러오지 못했습니다. 기존 편집 상태를 유지합니다."
         }
     }
 

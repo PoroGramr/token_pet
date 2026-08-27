@@ -27,6 +27,10 @@ final class CharacterRepository {
         try menuResolver.presentation()
     }
 
+    var persistedSelectedCharacterID: UUID? {
+        store.selectedCharacterID
+    }
+
     func selectedCharacter() -> RuntimeCharacter {
         guard let selectedID = store.selectedCharacterID else {
             return builtInCharacter()
@@ -41,10 +45,6 @@ final class CharacterRepository {
         } catch {
             return builtInCharacter()
         }
-    }
-
-    func builtInCharacterForDisplay() -> RuntimeCharacter {
-        builtInCharacter()
     }
 
     func select(id: UUID?) throws -> RuntimeCharacter {
