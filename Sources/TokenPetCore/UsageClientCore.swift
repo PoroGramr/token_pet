@@ -4,6 +4,9 @@ public enum UsageClientError: Error, Equatable, Sendable {
     case missingCredentials
     case keychainLocked
     case keychainDenied
+    case keychainCanceled
+    case keychain(statusCode: Int32)
+    case keychainToolUnavailable
     case unauthorized
     case rateLimited(retryAfter: TimeInterval?)
     case incompatibleResponse
@@ -52,6 +55,12 @@ public struct UsageStateMachine: Sendable {
             return .failed("Mac 로그인 키체인이 잠겨 있습니다")
         case .keychainDenied:
             return .failed("Keychain 접근이 거부되었습니다")
+        case .keychainCanceled:
+            return .failed("Keychain 접근이 취소되었습니다")
+        case .keychain:
+            return .failed("Keychain 오류가 발생했습니다")
+        case .keychainToolUnavailable:
+            return .failed("Keychain 자격 증명 도구가 응답하지 않습니다")
         case .incompatibleResponse:
             return .failed("API 응답 형식이 변경되었습니다")
         case .rateLimited:

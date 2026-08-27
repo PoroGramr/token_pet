@@ -19,10 +19,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.panelController = panelController
         panelController.onRefresh = { [weak self] in self?.usageController.refresh(manual: true) }
         panelController.onLogin = { [weak self] in self?.startClaudeLogin() }
+        panelController.onCredentialFallbackChanged = { [weak self] in self?.usageController.refresh(manual: false) }
         panelController.show()
 
         usageController.onStateChange = { [weak panelController] state in
             panelController?.update(state: state)
+            if state == .failed("Keychain 접근이 거부되었습니다") {
+                panelController?.offerCredentialFallbackIfNeeded()
+            }
         }
         panelController.update(state: usageController.state)
         usageController.start()

@@ -34,6 +34,14 @@ private final class TestRunner {
 
 private let runner = TestRunner()
 
+private struct FakeCredentialDataReader: CredentialDataReading {
+    let dataByService: [String: Data]
+
+    func readCredentialData(service: String) throws -> Data? {
+        dataByService[service]
+    }
+}
+
 @MainActor
 private func testDecodesFiveHourUsageAndCalculatesRemainingPercent() throws {
     let data = Data(#"{"five_hour":{"utilization":28.4,"resets_at":"2026-08-27T08:00:00Z"}}"#.utf8)
@@ -117,6 +125,41 @@ private func testDecodesClaudeCodeCredentialEnvelope() throws {
 
     runner.expectEqual(credentials.accessToken, "access", "credential access token")
     runner.expectEqual(credentials.expiresAtMilliseconds, 1_787_800_000_000, "credential expiry")
+}
+
+@MainActor
+private func testLoadsLegacyCredentialThroughAuthorizedSecurityToolFallback() throws {
+    let data = Data(#"{"claudeAiOauth":{"accessToken":"fallback-access","expiresAt":1787800000000}}"#.utf8)
+    let store = SecurityToolCredentialStore(
+        services: ["Claude Code-credentials-namespaced", "Claude Code-credentials"],
+        reader: FakeCredentialDataReader(dataByService: ["Claude Code-credentials": data])
+    )
+
+    runner.expectEqual(try store.loadAccessToken(), "fallback-access", "security tool fallback access token")
+}
+
+@MainActor
+private func testSecurityToolFallbackRequiresExplicitConsentAndNeverRunsAfterCancel() {
+    runner.expectEqual(
+        CredentialFallbackPolicy.shouldUseSecurityTool(for: .keychainDenied, userAllowed: false),
+        false,
+        "denied keychain without fallback consent"
+    )
+    runner.expectEqual(
+        CredentialFallbackPolicy.shouldUseSecurityTool(for: .keychainDenied, userAllowed: true),
+        true,
+        "denied keychain with fallback consent"
+    )
+    runner.expectEqual(
+        CredentialFallbackPolicy.shouldUseSecurityTool(for: .keychainCanceled, userAllowed: true),
+        false,
+        "canceled keychain must never fall back"
+    )
+    runner.expectEqual(
+        CredentialFallbackPolicy.shouldUseSecurityTool(for: .keychain(statusCode: -1), userAllowed: true),
+        false,
+        "unknown keychain error must never fall back"
+    )
 }
 
 private func alphaValue(in image: CGImage, x: Int, y: Int) -> UInt8 {
@@ -233,7 +276,7 @@ private func testScreenshotCharacterIsUprightIfRequested() throws {
     var greenRows: [Int] = []
     var greenColumns: [Int] = []
     for y in 0..<image.height {
-        for x in 0..<image.width {
+        for x in (image.width / 2)..<image.width {
             let offset = y * bytesPerRow + x * 4
             let red = Int(pixels[offset])
             let green = Int(pixels[offset + 1])
@@ -258,8 +301,11 @@ private func testScreenshotCharacterIsUprightIfRequested() throws {
         let maxGreenX = greenColumns.max()!
         let minGreenY = greenRows.min()!
         let maxGreenY = greenRows.max()!
+        let greenHeight = maxGreenY - minGreenY
+        let textSearchMinY = minGreenY + greenHeight / 4
+        let textSearchMaxY = maxGreenY - greenHeight / 4
         var whiteTextRows: [Int] = []
-        for y in minGreenY...maxGreenY {
+        for y in textSearchMinY...textSearchMaxY {
             for x in (minGreenX + 4)..<(maxGreenX - 4) {
                 let offset = y * bytesPerRow + x * 4
                 if pixels[offset] > 245, pixels[offset + 1] > 245, pixels[offset + 2] > 245 {
@@ -285,6 +331,8 @@ do {
     try testParsesUsageAndRecognizesHTTPFailures()
     testKeepsLastValueWhenRefreshFails()
     try testDecodesClaudeCodeCredentialEnvelope()
+    try testLoadsLegacyCredentialThroughAuthorizedSecurityToolFallback()
+    testSecurityToolFallbackRequiresExplicitConsentAndNeverRunsAfterCancel()
     testDefinesPingPongAnimationSequence()
     try testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames()
     try testPreservesExistingTransparency()

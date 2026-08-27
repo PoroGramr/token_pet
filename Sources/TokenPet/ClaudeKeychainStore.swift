@@ -5,21 +5,33 @@ import TokenPetCore
 
 struct ClaudeKeychainStore: AccessTokenLoading, Sendable {
     func loadAccessToken() throws -> String {
-        let candidates = try credentialServices.enumerated().flatMap { priority, service in
-            try loadCandidates(service: service, servicePriority: priority)
+        let userAllowedFallback = UserDefaults.standard.bool(forKey: CredentialFallbackPolicy.userDefaultsKey)
+        if userAllowedFallback {
+            return try SecurityToolCredentialStore(services: credentialServices).loadAccessToken()
         }
-        let valid = candidates.compactMap { candidate -> DecodedCandidate? in
-            guard let credentials = try? ClaudeCredentialsCodec.decode(candidate.data) else { return nil }
-            return DecodedCandidate(
-                accessToken: credentials.accessToken,
-                modifiedAt: candidate.modifiedAt,
-                servicePriority: candidate.servicePriority
-            )
+
+        do {
+            let candidates = try credentialServices.enumerated().flatMap { priority, service in
+                try loadCandidates(service: service, servicePriority: priority)
+            }
+            let valid = candidates.compactMap { candidate -> DecodedCandidate? in
+                guard let credentials = try? ClaudeCredentialsCodec.decode(candidate.data) else { return nil }
+                return DecodedCandidate(
+                    accessToken: credentials.accessToken,
+                    modifiedAt: candidate.modifiedAt,
+                    servicePriority: candidate.servicePriority
+                )
+            }
+            guard let selected = valid.sorted(by: DecodedCandidate.isPreferred).first else {
+                throw UsageClientError.missingCredentials
+            }
+            return selected.accessToken
+        } catch let error as UsageClientError {
+            guard CredentialFallbackPolicy.shouldUseSecurityTool(for: error, userAllowed: userAllowedFallback) else {
+                throw error
+            }
+            return try SecurityToolCredentialStore(services: credentialServices).loadAccessToken()
         }
-        guard let selected = valid.sorted(by: DecodedCandidate.isPreferred).first else {
-            throw UsageClientError.missingCredentials
-        }
-        return selected.accessToken
     }
 
     private func loadCandidates(service: String, servicePriority: Int) throws -> [Candidate] {
@@ -39,10 +51,12 @@ struct ClaudeKeychainStore: AccessTokenLoading, Sendable {
             return []
         case errSecInteractionNotAllowed:
             throw UsageClientError.keychainLocked
-        case errSecAuthFailed, errSecUserCanceled:
+        case errSecAuthFailed:
             throw UsageClientError.keychainDenied
+        case errSecUserCanceled:
+            throw UsageClientError.keychainCanceled
         default:
-            throw UsageClientError.keychainDenied
+            throw UsageClientError.keychain(statusCode: status)
         }
 
         let dictionaries: [[String: Any]]

@@ -10,11 +10,18 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let statusItem = NSMenuItem(title: "사용량을 불러오는 중입니다", action: nil, keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "로그인 시 실행", action: #selector(toggleLoginItem), keyEquivalent: "")
+    private let credentialFallbackItem = NSMenuItem(
+        title: "Apple security fallback 허용",
+        action: #selector(toggleCredentialFallback),
+        keyEquivalent: ""
+    )
     private var state: UsageDisplayState = .loading
     private var transientError: String?
+    private var offeredCredentialFallback = false
 
     var onRefresh: (() -> Void)?
     var onLogin: (() -> Void)?
+    var onCredentialFallbackChanged: (() -> Void)?
 
     init(loginItemManager: LoginItemManager) {
         self.loginItemManager = loginItemManager
@@ -53,6 +60,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         statusItem.title = transientError ?? WidgetPresentation(state: state).statusMessage
         transientError = nil
         loginItem.state = loginItemManager.isEnabled ? .on : .off
+        credentialFallbackItem.state = isCredentialFallbackAllowed ? .on : .off
     }
 
     private func configurePanel() {
@@ -76,6 +84,8 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         menu.addItem(withTitle: "새로고침", action: #selector(refresh), keyEquivalent: "r").target = self
         menu.addItem(withTitle: "우측 하단으로 이동", action: #selector(resetPosition), keyEquivalent: "") .target = self
         menu.addItem(withTitle: "Claude Code 로그인", action: #selector(login), keyEquivalent: "").target = self
+        credentialFallbackItem.target = self
+        menu.addItem(credentialFallbackItem)
         loginItem.target = self
         menu.addItem(loginItem)
         menu.addItem(.separator())
@@ -126,6 +136,37 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         } catch {
             transientError = "로그인 시 실행 설정을 변경하지 못했습니다"
         }
+    }
+
+    func offerCredentialFallbackIfNeeded() {
+        guard !offeredCredentialFallback, !isCredentialFallbackAllowed else { return }
+        offeredCredentialFallback = true
+        requestCredentialFallbackConsent()
+    }
+
+    @objc private func toggleCredentialFallback() {
+        if isCredentialFallbackAllowed {
+            UserDefaults.standard.set(false, forKey: CredentialFallbackPolicy.userDefaultsKey)
+            onCredentialFallbackChanged?()
+        } else {
+            requestCredentialFallbackConsent()
+        }
+    }
+
+    private var isCredentialFallbackAllowed: Bool {
+        UserDefaults.standard.bool(forKey: CredentialFallbackPolicy.userDefaultsKey)
+    }
+
+    private func requestCredentialFallbackConsent() {
+        let alert = NSAlert()
+        alert.messageText = "Apple security fallback을 허용할까요?"
+        alert.informativeText = "TokenPet은 Apple의 /usr/bin/security를 사용해 Claude Code 인증 정보를 읽기만 합니다. 토큰은 저장하거나 로그에 남기지 않습니다."
+        alert.addButton(withTitle: "허용")
+        alert.addButton(withTitle: "취소")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        UserDefaults.standard.set(true, forKey: CredentialFallbackPolicy.userDefaultsKey)
+        onCredentialFallbackChanged?()
     }
 
     @objc private func resetPosition() {
