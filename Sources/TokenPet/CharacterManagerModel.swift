@@ -8,6 +8,7 @@ final class CharacterManagerModel: ObservableObject {
     @Published private(set) var profiles: [CharacterProfile] = []
     @Published private(set) var selectedID: UUID?
     @Published private(set) var draft: CharacterDraft?
+    @Published private(set) var selectedFrameIndex = 0
     @Published private(set) var errorMessage: String?
     @Published private(set) var isDirty = false
 
@@ -35,6 +36,10 @@ final class CharacterManagerModel: ObservableObject {
         guard let selectedID, selectedID != CharacterRepository.builtInID else { return false }
         return profiles.contains { $0.id == selectedID }
     }
+    var selectedFramePosition: NormalizedPoint? {
+        guard let draft, draft.framePercentPositions.indices.contains(selectedFrameIndex) else { return nil }
+        return draft.framePercentPositions[selectedFrameIndex]
+    }
 
     func refresh() {
         guard !isDirty else { return }
@@ -50,6 +55,7 @@ final class CharacterManagerModel: ObservableObject {
         )
         selectedID = nextState.selectedID
         draft = newDraft
+        selectedFrameIndex = 0
         errorMessage = nil
         isDirty = nextState.isDirty
     }
@@ -89,7 +95,12 @@ final class CharacterManagerModel: ObservableObject {
             var candidate = draft ?? CharacterDraft.new()
             candidate.sourceFrames = sources
             candidate.displayFrames = displays
+            candidate.framePercentPositions = Array(
+                repeating: candidate.percentPosition,
+                count: sources.count
+            )
             draft = candidate
+            selectedFrameIndex = 0
             selectedID = candidate.id
             errorMessage = nil
             isDirty = true
@@ -100,8 +111,15 @@ final class CharacterManagerModel: ObservableObject {
 
     func moveFrame(from sourceIndex: Int, to destinationIndex: Int) {
         guard var candidate = draft else { return }
+        let previousSelection = selectedFrameIndex
         candidate.moveFrame(from: sourceIndex, to: destinationIndex)
         draft = candidate
+        selectedFrameIndex = movedSelection(
+            previousSelection,
+            movingFrom: sourceIndex,
+            to: destinationIndex,
+            frameCount: candidate.sourceFrames.count
+        )
         errorMessage = nil
         isDirty = true
     }
@@ -113,9 +131,14 @@ final class CharacterManagerModel: ObservableObject {
         isDirty = true
     }
 
-    func updatePercentPosition(_ position: NormalizedPoint) {
+    func selectFrame(index: Int) {
+        guard let draft, draft.displayFrames.indices.contains(index) else { return }
+        selectedFrameIndex = index
+    }
+
+    func updateSelectedFramePercentPosition(_ position: NormalizedPoint) {
         guard var candidate = draft else { return }
-        candidate.percentPosition = PercentLayout.clampedPosition(position)
+        candidate.updateFramePercentPosition(position, at: selectedFrameIndex)
         draft = candidate
         isDirty = true
     }
@@ -190,6 +213,10 @@ final class CharacterManagerModel: ObservableObject {
             preparedRuntime = RuntimeCharacter(
                 profile: assets.profile,
                 frames: orderedFrames,
+                framePercentPositions: FramePercentPositionMapper.ordered(
+                    positions: assets.profile.resolvedFramePercentPositions,
+                    frameOrder: assets.profile.frameOrder
+                ),
                 playbackIndices: FrameSequence.indices(frameCount: orderedFrames.count)
             )
         } catch {
@@ -225,6 +252,7 @@ final class CharacterManagerModel: ObservableObject {
             profiles.removeAll { $0.id == id }
             selectedID = CharacterRepository.builtInID
             draft = nil
+            selectedFrameIndex = 0
             errorMessage = nil
             isDirty = false
             reloadProfiles()
@@ -279,6 +307,7 @@ final class CharacterManagerModel: ObservableObject {
             )
             selectedID = nextState.selectedID
             draft = nil
+            selectedFrameIndex = 0
             errorMessage = nil
             isDirty = nextState.isDirty
             return true
@@ -291,6 +320,7 @@ final class CharacterManagerModel: ObservableObject {
             )
             selectedID = nextState.selectedID
             draft = loadedDraft
+            selectedFrameIndex = 0
             errorMessage = nil
             isDirty = nextState.isDirty
             return true
@@ -309,10 +339,23 @@ final class CharacterManagerModel: ObservableObject {
     private func validationMessage(for errors: [String]) -> String {
         if errors.contains("name") { return "캐릭터 이름은 1~40자로 입력해 주세요." }
         if errors.contains("duplicateName") { return "같은 이름의 캐릭터가 이미 있습니다." }
-        if errors.contains("frameCount") || errors.contains("displayFrames") {
+        if errors.contains("frameCount") || errors.contains("displayFrames") || errors.contains("framePercentPositions") {
             return "정상적인 이미지 3장 또는 4장이 필요합니다."
         }
         if errors.contains("percentFontSize") { return "글자 크기는 10~36pt로 설정해 주세요." }
         return "입력 내용을 확인해 주세요."
+    }
+
+    private func movedSelection(
+        _ selected: Int,
+        movingFrom source: Int,
+        to destination: Int,
+        frameCount: Int
+    ) -> Int {
+        guard frameCount > 0 else { return 0 }
+        if selected == source { return min(destination, frameCount - 1) }
+        if source < selected && selected <= destination { return selected - 1 }
+        if destination <= selected && selected < source { return selected + 1 }
+        return min(max(0, selected), frameCount - 1)
     }
 }

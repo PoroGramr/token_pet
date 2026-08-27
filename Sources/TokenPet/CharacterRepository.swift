@@ -4,6 +4,7 @@ import TokenPetCore
 struct RuntimeCharacter {
     let profile: CharacterProfile
     let frames: [NSImage]
+    let framePercentPositions: [NormalizedPoint]
     let playbackIndices: [Int]
 }
 
@@ -63,9 +64,17 @@ final class CharacterRepository {
         guard frames.count == assets.profile.frameCount else {
             throw CharacterStoreError.unreadableAssets
         }
+        let positions = FramePercentPositionMapper.ordered(
+            positions: assets.profile.resolvedFramePercentPositions,
+            frameOrder: assets.profile.frameOrder
+        )
+        guard positions.count == frames.count else {
+            throw CharacterStoreError.unreadableAssets
+        }
         let character = RuntimeCharacter(
             profile: assets.profile,
             frames: frames,
+            framePercentPositions: positions,
             playbackIndices: FrameSequence.indices(frameCount: frames.count)
         )
         store.selectedCharacterID = id
@@ -76,6 +85,10 @@ final class CharacterRepository {
         RuntimeCharacter(
             profile: Self.builtInProfile,
             frames: Self.loadBuiltInFrames(),
+            framePercentPositions: Array(
+                repeating: Self.builtInProfile.percentPosition,
+                count: Self.builtInProfile.frameCount
+            ),
             playbackIndices: FrameSequence.indices(frameCount: 4)
         )
     }
@@ -89,7 +102,11 @@ final class CharacterRepository {
         percentPosition: NormalizedPoint(x: 0.5, y: 52.0 / 120.0),
         percentFontSize: 22,
         framesPerSecond: FrameSequence.framesPerSecond,
-        schemaVersion: 1
+        schemaVersion: 1,
+        framePercentPositions: Array(
+            repeating: NormalizedPoint(x: 0.5, y: 52.0 / 120.0),
+            count: 4
+        )
     )
 
     private static func loadBuiltInFrames() -> [NSImage] {

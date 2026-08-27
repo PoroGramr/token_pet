@@ -18,6 +18,7 @@ public struct CharacterProfile: Codable, Equatable, Identifiable, Sendable {
     public var frameOrder: [Int]
     public var removesLightBackground: Bool
     public var percentPosition: NormalizedPoint
+    public var framePercentPositions: [NormalizedPoint]?
     public var percentFontSize: Double
     public var framesPerSecond: Int
     public var schemaVersion: Int
@@ -25,7 +26,8 @@ public struct CharacterProfile: Codable, Equatable, Identifiable, Sendable {
     public init(
         id: UUID, name: String, frameCount: Int, frameOrder: [Int],
         removesLightBackground: Bool, percentPosition: NormalizedPoint,
-        percentFontSize: Double, framesPerSecond: Int, schemaVersion: Int
+        percentFontSize: Double, framesPerSecond: Int, schemaVersion: Int,
+        framePercentPositions: [NormalizedPoint]? = nil
     ) {
         self.id = id
         self.name = name
@@ -33,9 +35,31 @@ public struct CharacterProfile: Codable, Equatable, Identifiable, Sendable {
         self.frameOrder = frameOrder
         self.removesLightBackground = removesLightBackground
         self.percentPosition = percentPosition
+        self.framePercentPositions = framePercentPositions
         self.percentFontSize = percentFontSize
         self.framesPerSecond = framesPerSecond
         self.schemaVersion = schemaVersion
+    }
+
+    public var resolvedFramePercentPositions: [NormalizedPoint] {
+        guard (3...4).contains(frameCount) else { return [] }
+        guard let framePercentPositions, framePercentPositions.count == frameCount else {
+            return Array(repeating: percentPosition, count: frameCount)
+        }
+        return framePercentPositions
+    }
+}
+
+public enum FramePercentPositionMapper {
+    public static func ordered(
+        positions: [NormalizedPoint],
+        frameOrder: [Int]
+    ) -> [NormalizedPoint] {
+        guard positions.count == frameOrder.count,
+              frameOrder.sorted() == Array(positions.indices) else {
+            return []
+        }
+        return frameOrder.map { positions[$0] }
     }
 }
 
@@ -55,6 +79,13 @@ public enum CharacterProfileValidator {
             errors.append("frameOrder")
         }
         if !(0...1).contains(profile.percentPosition.x) || !(0...1).contains(profile.percentPosition.y) { errors.append("percentPosition") }
+        if let framePercentPositions = profile.framePercentPositions {
+            if framePercentPositions.count != profile.frameCount || framePercentPositions.contains(where: {
+                !(0...1).contains($0.x) || !(0...1).contains($0.y)
+            }) {
+                errors.append("framePercentPositions")
+            }
+        }
         if !(10...36).contains(profile.percentFontSize) { errors.append("percentFontSize") }
         if profile.framesPerSecond != 3 { errors.append("framesPerSecond") }
         if profile.schemaVersion != 1 { errors.append("schemaVersion") }

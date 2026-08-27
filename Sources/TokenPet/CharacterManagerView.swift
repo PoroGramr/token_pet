@@ -167,19 +167,30 @@ struct CharacterManagerView: View {
     @ViewBuilder
     private func frameTile(draft: CharacterDraft, index: Int) -> some View {
         if draft.displayFrames.indices.contains(index), let image = NSImage(data: draft.displayFrames[index]) {
-            VStack(spacing: 7) {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.none)
-                    .scaledToFit()
-                    .padding(8)
-                Text("\(index + 1)")
-                    .font(.caption.bold())
+            Button {
+                model.selectFrame(index: index)
+            } label: {
+                VStack(spacing: 7) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.none)
+                        .scaledToFit()
+                        .padding(8)
+                    Text("프레임 \(index + 1)")
+                        .font(.caption.bold())
+                }
+                .frame(width: 120, height: 130)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(
+                            model.selectedFrameIndex == index ? Color.accentColor : Color.secondary.opacity(0.3),
+                            lineWidth: model.selectedFrameIndex == index ? 3 : 1
+                        )
+                )
             }
-            .frame(width: 120, height: 130)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.3)))
+            .buttonStyle(.plain)
             .draggable(String(index))
             .dropDestination(for: String.self) { sourceIndices, _ in
                 guard let value = sourceIndices.first, let sourceIndex = Int(value) else { return false }
@@ -204,35 +215,54 @@ struct CharacterManagerView: View {
     private func previewSection(draft: CharacterDraft) -> some View {
         HStack(alignment: .top, spacing: 26) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("실시간 미리보기")
+                Text("프레임 \(model.selectedFrameIndex + 1) 위치 편집")
                     .font(.headline)
-                Text("72%를 드래그해 실제 표시 위치를 정하세요.")
+                Text("선택한 이미지에서 72%를 드래그하세요.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                CharacterAnimationPreview(draft: draft) { position in
-                    model.updatePercentPosition(position)
+                if draft.displayFrames.indices.contains(model.selectedFrameIndex),
+                   let image = NSImage(data: draft.displayFrames[model.selectedFrameIndex]),
+                   let position = model.selectedFramePosition {
+                    CharacterFramePositionEditor(
+                        image: image,
+                        position: position,
+                        fontSize: draft.percentFontSize
+                    ) { position in
+                        model.updateSelectedFramePercentPosition(position)
+                    }
+                    .frame(width: 300, height: 300)
+                    .background(checkerboard)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.secondary.opacity(0.25)))
                 }
-                .frame(width: 300, height: 300)
-                .background(checkerboard)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.secondary.opacity(0.25)))
             }
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("퍼센트 표시")
+                Text("전체 애니메이션")
+                    .font(.headline)
+                Text("각 이미지의 위치가 3fps 왕복 재생에 적용됩니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                CharacterAnimationPreview(draft: draft)
+                    .frame(width: 180, height: 180)
+                    .background(checkerboard)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.25)))
+
+                Text("프레임 \(model.selectedFrameIndex + 1) 좌표")
                     .font(.headline)
                 HStack {
                     numericField(
                         title: "X",
-                        value: draft.percentPosition.x,
+                        value: model.selectedFramePosition?.x ?? 0.5,
                         range: 0...1,
-                        onChange: { model.updatePercentPosition(.init(x: $0, y: draft.percentPosition.y)) }
+                        onChange: { model.updateSelectedFramePercentPosition(.init(x: $0, y: model.selectedFramePosition?.y ?? 0.5)) }
                     )
                     numericField(
                         title: "Y",
-                        value: draft.percentPosition.y,
+                        value: model.selectedFramePosition?.y ?? 0.5,
                         range: 0...1,
-                        onChange: { model.updatePercentPosition(.init(x: draft.percentPosition.x, y: $0)) }
+                        onChange: { model.updateSelectedFramePercentPosition(.init(x: model.selectedFramePosition?.x ?? 0.5, y: $0)) }
                     )
                 }
 
@@ -329,53 +359,78 @@ struct CharacterManagerView: View {
     }
 }
 
+private struct CharacterFramePositionEditor: View {
+    let image: NSImage
+    let position: NormalizedPoint
+    let fontSize: Double
+    let onPositionChange: (NormalizedPoint) -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.none)
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                PercentAttributedPreview(
+                    position: position,
+                    fontSize: fontSize * max(0.01, min(geometry.size.width, geometry.size.height) / 120)
+                )
+                .allowsHitTesting(false)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard geometry.size.width > 0, geometry.size.height > 0 else { return }
+                        onPositionChange(
+                            PercentLayout.clampedPosition(
+                                NormalizedPoint(
+                                    x: Double(value.location.x / geometry.size.width),
+                                    y: 1.0 - Double(value.location.y / geometry.size.height)
+                                )
+                            )
+                        )
+                    }
+            )
+        }
+    }
+}
+
 private struct CharacterAnimationPreview: View {
     let draft: CharacterDraft
-    let onPositionChange: (NormalizedPoint) -> Void
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / Double(FrameSequence.framesPerSecond))) { timeline in
             GeometryReader { geometry in
                 ZStack {
-                    if let image = currentImage(at: timeline.date) {
-                        Image(nsImage: image)
+                    if let frame = currentFrame(at: timeline.date) {
+                        Image(nsImage: frame.image)
                             .resizable()
                             .interpolation(.none)
                             .scaledToFit()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        PercentAttributedPreview(
+                            position: frame.position,
+                            fontSize: draft.percentFontSize * max(0.01, min(geometry.size.width, geometry.size.height) / 120)
+                        )
+                        .allowsHitTesting(false)
                     }
-                    PercentAttributedPreview(
-                        position: draft.percentPosition,
-                        fontSize: draft.percentFontSize * max(0.01, min(geometry.size.width, geometry.size.height) / 120)
-                    )
-                    .allowsHitTesting(false)
                 }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            guard geometry.size.width > 0, geometry.size.height > 0 else { return }
-                            onPositionChange(
-                                PercentLayout.clampedPosition(
-                                    NormalizedPoint(
-                                        x: Double(value.location.x / geometry.size.width),
-                                        y: 1.0 - Double(value.location.y / geometry.size.height)
-                                    )
-                                )
-                            )
-                        }
-                )
             }
         }
     }
 
-    private func currentImage(at date: Date) -> NSImage? {
+    private func currentFrame(at date: Date) -> (image: NSImage, position: NormalizedPoint)? {
         let sequence = FrameSequence.indices(frameCount: draft.displayFrames.count)
         guard !sequence.isEmpty else { return nil }
         let tick = max(0, Int(date.timeIntervalSinceReferenceDate * Double(FrameSequence.framesPerSecond)))
         let frameIndex = sequence[tick % sequence.count]
-        guard draft.displayFrames.indices.contains(frameIndex) else { return nil }
-        return NSImage(data: draft.displayFrames[frameIndex])
+        guard draft.displayFrames.indices.contains(frameIndex),
+              draft.framePercentPositions.indices.contains(frameIndex),
+              let image = NSImage(data: draft.displayFrames[frameIndex]) else { return nil }
+        return (image, draft.framePercentPositions[frameIndex])
     }
 
 }

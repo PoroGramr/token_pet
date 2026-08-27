@@ -291,6 +291,51 @@ private func testCharacterProfileAndPercentLayoutContracts() throws {
 }
 
 @MainActor
+private func testKeepsPercentPositionsWithTheirCharacterFrames() throws {
+    let first = NormalizedPoint(x: 0.2, y: 0.3)
+    let second = NormalizedPoint(x: 0.5, y: 0.6)
+    let third = NormalizedPoint(x: 0.8, y: 0.7)
+    let legacy = CharacterProfile(
+        id: UUID(), name: "Legacy", frameCount: 3, frameOrder: [0, 1, 2],
+        removesLightBackground: false, percentPosition: first,
+        percentFontSize: 22, framesPerSecond: 3, schemaVersion: 1
+    )
+    runner.expectEqual(
+        legacy.resolvedFramePercentPositions,
+        [first, first, first],
+        "legacy percent position is copied to every frame"
+    )
+
+    var profile = legacy
+    profile.framePercentPositions = [first, second, third]
+    runner.expectTrue(
+        CharacterProfileValidator.validate(profile, existingNames: []).isEmpty,
+        "three frame positions are valid"
+    )
+    runner.expectEqual(
+        FramePercentPositionMapper.ordered(
+            positions: profile.resolvedFramePercentPositions,
+            frameOrder: [2, 0, 1]
+        ),
+        [third, first, second],
+        "runtime positions use the same order as runtime frames"
+    )
+
+    var wrongCount = profile
+    wrongCount.framePercentPositions = [first, second]
+    runner.expectTrue(
+        CharacterProfileValidator.validate(wrongCount, existingNames: []).contains("framePercentPositions"),
+        "wrong position count is rejected"
+    )
+    var outOfRange = profile
+    outOfRange.framePercentPositions = [first, second, NormalizedPoint(x: 1.1, y: 0.5)]
+    runner.expectTrue(
+        CharacterProfileValidator.validate(outOfRange, existingNames: []).contains("framePercentPositions"),
+        "out of range frame position is rejected"
+    )
+}
+
+@MainActor
 private func testBuildsSafeCharacterMenuPresentation() {
     let builtInID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     let catID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
@@ -928,6 +973,7 @@ do {
     testSecurityToolFallbackRequiresExplicitConsentAndNeverRunsAfterCancel()
     testDefinesPingPongAnimationSequence()
     try testCharacterProfileAndPercentLayoutContracts()
+    try testKeepsPercentPositionsWithTheirCharacterFrames()
     testBuildsSafeCharacterMenuPresentation()
     try testPreservesCharacterSelectionAcrossTransientCatalogFailure()
     testDefinesCharacterMenuSiblingStructureAndRepresentedIDs()

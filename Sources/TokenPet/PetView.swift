@@ -6,6 +6,7 @@ final class PetView: NSView {
     private var frames: [NSImage] = []
     private var playbackIndices: [Int] = []
     private var percentPosition = NormalizedPoint(x: 0.5, y: 52.0 / 120.0)
+    private var framePercentPositions: [NormalizedPoint] = []
     private var percentFontSize: Double = 22
     private var frameIndex = 0
     private var animationTimer: Timer?
@@ -42,6 +43,7 @@ final class PetView: NSView {
         frames = character.frames
         playbackIndices = character.playbackIndices.filter { frames.indices.contains($0) }
         percentPosition = character.profile.percentPosition
+        framePercentPositions = character.framePercentPositions
         percentFontSize = character.profile.percentFontSize
         frameIndex = 0
         if frameCountChanged {
@@ -58,7 +60,8 @@ final class PetView: NSView {
         super.draw(dirtyRect)
         NSGraphicsContext.current?.imageInterpolation = .none
 
-        if let imageIndex = playbackIndices.indices.isEmpty ? nil : playbackIndices[frameIndex % playbackIndices.count] {
+        let imageIndex = playbackIndices.indices.isEmpty ? nil : playbackIndices[frameIndex % playbackIndices.count]
+        if let imageIndex {
             let image = frames[imageIndex]
             let scale = min(bounds.width / image.size.width, bounds.height / image.size.height)
             let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
@@ -74,7 +77,8 @@ final class PetView: NSView {
         PercentTextDrawing.draw(
             text: presentation.text,
             in: bounds,
-            position: percentPosition,
+            position: imageIndex.flatMap { framePercentPositions.indices.contains($0) ? framePercentPositions[$0] : nil }
+                ?? percentPosition,
             fontSize: percentFontSize
         )
 

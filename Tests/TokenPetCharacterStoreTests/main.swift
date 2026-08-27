@@ -643,9 +643,19 @@ private func testCharacterDraftReordersAndValidates() {
     let third = Data("third".utf8)
 
     var draft = CharacterDraft.new(name: "Cat", sourceFrames: [first, second, third])
+    draft.framePercentPositions = [
+        NormalizedPoint(x: 0.2, y: 0.3),
+        NormalizedPoint(x: 0.5, y: 0.6),
+        NormalizedPoint(x: 0.8, y: 0.7)
+    ]
     draft.moveFrame(from: 0, to: 2)
 
     runner.expectEqual(draft.sourceFrames, [second, third, first], "drag reorder")
+    runner.expectEqual(
+        draft.framePercentPositions,
+        [NormalizedPoint(x: 0.5, y: 0.6), NormalizedPoint(x: 0.8, y: 0.7), NormalizedPoint(x: 0.2, y: 0.3)],
+        "frame position moves with dragged image"
+    )
     runner.expectTrue(draft.validation(existingNames: []).isValid, "valid 3-frame draft")
     runner.expectTrue(
         !CharacterDraft.new(name: "", sourceFrames: [first, second]).validation(existingNames: []).isValid,
@@ -662,6 +672,11 @@ private func testCharacterDraftNormalizesStoredFrameOrderExactlyOnce() {
     let runner = TestRunner()
     var profile = makeProfile()
     profile.frameOrder = [2, 0, 1]
+    profile.framePercentPositions = [
+        NormalizedPoint(x: 0.1, y: 0.2),
+        NormalizedPoint(x: 0.4, y: 0.5),
+        NormalizedPoint(x: 0.7, y: 0.8)
+    ]
     let sourceA = Data("source-A".utf8)
     let sourceB = Data("source-B".utf8)
     let sourceC = Data("source-C".utf8)
@@ -684,6 +699,11 @@ private func testCharacterDraftNormalizesStoredFrameOrderExactlyOnce() {
 
     runner.expectEqual(draft.sourceFrames, [sourceC, sourceA, sourceB], "stored source order normalized once")
     runner.expectEqual(draft.displayFrames, [frameC, frameA, frameB], "stored display order normalized once")
+    runner.expectEqual(
+        draft.framePercentPositions,
+        [NormalizedPoint(x: 0.7, y: 0.8), NormalizedPoint(x: 0.1, y: 0.2), NormalizedPoint(x: 0.4, y: 0.5)],
+        "stored positions normalize with their images"
+    )
     runner.expectEqual(roundTrip.profile.frameOrder, [0, 1, 2], "normalized draft saves identity order")
     runner.expectEqual(playbackFrames, [frameC, frameA, frameB], "round-trip playback preserves C A B")
     if runner.failures > 0 { exit(1) }
