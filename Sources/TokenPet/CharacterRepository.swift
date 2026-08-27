@@ -12,25 +12,19 @@ final class CharacterRepository {
     static let builtInID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
     private let store: CharacterStore
+    private let menuResolver: CharacterMenuResolver
 
     init(store: CharacterStore) {
         self.store = store
+        menuResolver = CharacterMenuResolver(catalog: store, builtInProfile: Self.builtInProfile)
     }
 
-    func availableCharacters() -> [CharacterProfile] {
-        [Self.builtInProfile] + ((try? store.list()) ?? [])
+    func availableCharacters() throws -> [CharacterProfile] {
+        [Self.builtInProfile] + (try store.list())
     }
 
-    func characterMenuSnapshot() -> CharacterMenuSnapshot {
-        let snapshot = CharacterMenuPresentation.make(
-            profiles: availableCharacters(),
-            builtInID: Self.builtInID,
-            selectedID: store.selectedCharacterID
-        )
-        if snapshot.didFallbackToBuiltIn {
-            store.selectedCharacterID = nil
-        }
-        return snapshot
+    func characterMenuPresentation() throws -> CharacterMenuSnapshot {
+        try menuResolver.presentation()
     }
 
     func selectedCharacter() -> RuntimeCharacter {
@@ -38,11 +32,19 @@ final class CharacterRepository {
             return builtInCharacter()
         }
         do {
+            let profiles = try store.list()
+            guard profiles.contains(where: { $0.id == selectedID }) else {
+                store.selectedCharacterID = nil
+                return builtInCharacter()
+            }
             return try select(id: selectedID)
         } catch {
-            store.selectedCharacterID = nil
             return builtInCharacter()
         }
+    }
+
+    func builtInCharacterForDisplay() -> RuntimeCharacter {
+        builtInCharacter()
     }
 
     func select(id: UUID?) throws -> RuntimeCharacter {

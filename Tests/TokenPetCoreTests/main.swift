@@ -320,6 +320,145 @@ private func testBuildsSafeCharacterMenuPresentation() {
     runner.expectEqual(fallback.didFallbackToBuiltIn, true, "missing selected character reports fallback")
 }
 
+private enum CharacterMenuCatalogFixtureError: Error {
+    case unavailable
+}
+
+private final class FlakyCharacterMenuCatalog: @unchecked Sendable, CharacterMenuCatalog {
+    var selectedCharacterID: UUID?
+    var profiles: [CharacterProfile]
+    var failuresRemaining: Int
+
+    init(selectedCharacterID: UUID?, profiles: [CharacterProfile], failuresRemaining: Int) {
+        self.selectedCharacterID = selectedCharacterID
+        self.profiles = profiles
+        self.failuresRemaining = failuresRemaining
+    }
+
+    func list() throws -> [CharacterProfile] {
+        if failuresRemaining > 0 {
+            failuresRemaining -= 1
+            throw CharacterMenuCatalogFixtureError.unavailable
+        }
+        return profiles
+    }
+}
+
+@MainActor
+private func testPreservesCharacterSelectionAcrossTransientCatalogFailure() throws {
+    let builtInID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    let catID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+    let builtIn = CharacterProfile(
+        id: builtInID, name: "기본 캐릭터", frameCount: 4, frameOrder: [0, 1, 2, 3],
+        removesLightBackground: true, percentPosition: .init(x: 0.5, y: 0.5),
+        percentFontSize: 22, framesPerSecond: 3, schemaVersion: 1
+    )
+    let cat = CharacterProfile(
+        id: catID, name: "Cat", frameCount: 3, frameOrder: [0, 1, 2],
+        removesLightBackground: false, percentPosition: .init(x: 0.5, y: 0.5),
+        percentFontSize: 20, framesPerSecond: 3, schemaVersion: 1
+    )
+    let catalog = FlakyCharacterMenuCatalog(
+        selectedCharacterID: catID,
+        profiles: [cat],
+        failuresRemaining: 1
+    )
+    let resolver = CharacterMenuResolver(catalog: catalog, builtInProfile: builtIn)
+
+    do {
+        _ = try resolver.presentation()
+        runner.expectTrue(false, "transient catalog failure must be propagated")
+    } catch CharacterMenuCatalogFixtureError.unavailable {
+        runner.expectEqual(catalog.selectedCharacterID, catID, "transient failure preserves selected ID")
+    }
+
+    let recovered = try resolver.presentation()
+    runner.expectEqual(recovered.selectedID, catID, "successful retry restores selected menu entry")
+    runner.expectEqual(catalog.selectedCharacterID, catID, "successful retry retains selected ID")
+
+    catalog.profiles = []
+    let missing = try resolver.presentation()
+    runner.expectEqual(missing.didFallbackToBuiltIn, true, "successful listing detects genuinely missing selection")
+    runner.expectEqual(catalog.selectedCharacterID, nil, "genuinely missing selection is cleared")
+}
+
+@MainActor
+private func testDefinesCharacterMenuSiblingStructureAndRepresentedIDs() {
+    let builtInID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    let catID = UUID(uuidString: "55555555-5555-5555-5555-555555555555")!
+    let profiles = [
+        CharacterProfile(
+            id: builtInID, name: "기본 캐릭터", frameCount: 4, frameOrder: [0, 1, 2, 3],
+            removesLightBackground: true, percentPosition: .init(x: 0.5, y: 0.5),
+            percentFontSize: 22, framesPerSecond: 3, schemaVersion: 1
+        ),
+        CharacterProfile(
+            id: catID, name: "Cat", frameCount: 3, frameOrder: [0, 1, 2],
+            removesLightBackground: false, percentPosition: .init(x: 0.5, y: 0.5),
+            percentFontSize: 20, framesPerSecond: 3, schemaVersion: 1
+        )
+    ]
+    let snapshot = CharacterMenuPresentation.make(
+        profiles: profiles,
+        builtInID: builtInID,
+        selectedID: catID
+    )
+    let structure = CharacterMenuStructureDescriptor.standard
+
+    runner.expectEqual(
+        structure.rootItems.map(\.role),
+        [.characterSubmenu, .manageCharacters],
+        "character and manager are sibling root items"
+    )
+    runner.expectEqual(
+        structure.rootItems.map(\.title),
+        ["캐릭터", "캐릭터 관리…"],
+        "character sibling titles"
+    )
+    let submenuItems = structure.selectionItems(for: snapshot)
+    runner.expectEqual(
+        submenuItems.map(\.representedID),
+        [builtInID.uuidString, catID.uuidString],
+        "submenu represented IDs map to character UUIDs"
+    )
+    runner.expectEqual(
+        submenuItems.contains { $0.title == "캐릭터 관리…" },
+        false,
+        "character submenu contains selection items only"
+    )
+}
+
+@MainActor
+private func testShowsCharacterRefreshErrorsInCurrentMenuOpening() {
+    runner.expectEqual(
+        CharacterMenuStatusPresentation.message(
+            pendingError: nil,
+            refreshNotice: .listUnavailable,
+            usageMessage: "72% 남음"
+        ),
+        "캐릭터 목록을 불러오지 못했습니다",
+        "catalog failure replaces usage status in current opening"
+    )
+    runner.expectEqual(
+        CharacterMenuStatusPresentation.message(
+            pendingError: nil,
+            refreshNotice: .fallbackToBuiltIn,
+            usageMessage: "72% 남음"
+        ),
+        "선택한 캐릭터를 불러오지 못해 기본 캐릭터로 돌아갔습니다",
+        "fallback is visible in current opening"
+    )
+    runner.expectEqual(
+        CharacterMenuStatusPresentation.message(
+            pendingError: "로그인 오류",
+            refreshNotice: .none,
+            usageMessage: "72% 남음"
+        ),
+        "로그인 오류",
+        "pending menu error remains visible without character error"
+    )
+}
+
 @MainActor
 private func testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames() throws {
     for path in ["img/2.png", "img/3.png"] {
@@ -562,6 +701,9 @@ do {
     testDefinesPingPongAnimationSequence()
     try testCharacterProfileAndPercentLayoutContracts()
     testBuildsSafeCharacterMenuPresentation()
+    try testPreservesCharacterSelectionAcrossTransientCatalogFailure()
+    testDefinesCharacterMenuSiblingStructureAndRepresentedIDs()
+    testShowsCharacterRefreshErrorsInCurrentMenuOpening()
     try testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames()
     try testPreservesExistingTransparency()
     try testPreparesNormalizedTransparentBundleFrames()

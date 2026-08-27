@@ -24,7 +24,7 @@ final class CharacterManagerModel: ObservableObject {
         self.store = store
         self.repository = repository
         self.onApply = onApply
-        reloadProfiles(selecting: repository.selectedCharacter().profile.id)
+        reloadProfiles(selecting: store.selectedCharacterID ?? CharacterRepository.builtInID)
     }
 
     var isBuiltInSelected: Bool { selectedID == CharacterRepository.builtInID }
@@ -196,11 +196,17 @@ final class CharacterManagerModel: ObservableObject {
             onApply(preparedRuntime)
             draft = candidate
             selectedID = candidate.id
-            profiles = repository.availableCharacters()
-            errorMessage = nil
             isDirty = false
         } catch {
             errorMessage = "캐릭터를 저장하지 못했습니다. 기존 캐릭터는 그대로 유지됩니다."
+            return
+        }
+
+        do {
+            profiles = try repository.availableCharacters()
+            errorMessage = nil
+        } catch {
+            errorMessage = "캐릭터는 저장하고 적용했지만 목록을 새로 불러오지 못했습니다."
         }
     }
 
@@ -212,9 +218,12 @@ final class CharacterManagerModel: ObservableObject {
             if deletesAppliedCharacter {
                 onApply(try repository.select(id: nil))
             }
-            reloadProfiles(selecting: CharacterRepository.builtInID)
+            profiles.removeAll { $0.id == id }
+            selectedID = CharacterRepository.builtInID
+            draft = nil
             errorMessage = nil
             isDirty = false
+            reloadProfiles(selecting: CharacterRepository.builtInID)
         } catch {
             errorMessage = "캐릭터를 삭제하지 못했습니다."
         }
@@ -234,10 +243,17 @@ final class CharacterManagerModel: ObservableObject {
         return true
     }
 
-    private func reloadProfiles(selecting id: UUID) {
-        profiles = repository.availableCharacters()
+    @discardableResult
+    private func reloadProfiles(selecting id: UUID) -> Bool {
+        do {
+            profiles = try repository.availableCharacters()
+        } catch {
+            errorMessage = "캐릭터 목록을 불러오지 못했습니다. 기존 선택은 유지됩니다."
+            return false
+        }
         let availableIDs = Set(profiles.map(\.id))
         loadSelection(id: availableIDs.contains(id) ? id : CharacterRepository.builtInID)
+        return true
     }
 
     private func loadSelection(id: UUID) {
