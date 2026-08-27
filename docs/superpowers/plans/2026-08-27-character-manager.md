@@ -14,7 +14,7 @@
 
 - macOS 14 이상, Apple Silicon, 외부 패키지 의존성 없음.
 - 사용자 입력은 PNG, JPG, JPEG 정확히 3장 또는 4장.
-- 사용자 애니메이션은 3fps 왕복 재생, 기본 번들 캐릭터의 기존 5프레임도 유지.
+- 사용자 애니메이션은 3fps 왕복 재생, 기본 번들 캐릭터는 4프레임 `[1,2,3,4,3,2]`로 재생.
 - 저장 프레임은 240×240 PNG, 위젯은 120×120pt.
 - 퍼센트 위치는 0~1 정규화 좌표, 글자 크기는 10~36pt.
 - 사용자 데이터 루트는 `~/Library/Application Support/TokenPet/Characters`.
@@ -269,7 +269,7 @@ git commit -m "feat: add atomic character store"
 
 - [ ] **Step 1: Write failing shared-render-model tests**
 
-Test that `PercentLayout.textRect(containerSize:position:fontSize:measuredTextSize:)` returns a centered and clamped rect for representative positions and 10pt/36pt fonts. Verify a 3-frame profile expands to `[0,1,2,1]` while the built-in 5-frame profile expands to `[0,1,2,3,4,3,2,1]`.
+Test that `PercentLayout.textRect(containerSize:position:fontSize:measuredTextSize:)` returns a centered and clamped rect for representative positions and 10pt/36pt fonts. Verify a 3-frame profile expands to `[0,1,2,1]` while the built-in 4-frame profile expands to `[0,1,2,3,2,1]`.
 
 - [ ] **Step 2: Run and confirm RED**
 

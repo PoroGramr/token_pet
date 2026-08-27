@@ -9,6 +9,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     private let panel: NSPanel
     private let petView: PetView
     private let menu = NSMenu()
+    private let characterMenu = NSMenu()
     private let statusItem = NSMenuItem(title: "사용량을 불러오는 중입니다", action: nil, keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "로그인 시 실행", action: #selector(toggleLoginItem), keyEquivalent: "")
     private let credentialFallbackItem = NSMenuItem(
@@ -69,6 +70,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         transientError = nil
         loginItem.state = loginItemManager.isEnabled ? .on : .off
         credentialFallbackItem.state = isCredentialFallbackAllowed ? .on : .off
+        rebuildCharacterMenu()
     }
 
     private func configurePanel() {
@@ -91,7 +93,9 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "새로고침", action: #selector(refresh), keyEquivalent: "r").target = self
         menu.addItem(withTitle: "우측 하단으로 이동", action: #selector(resetPosition), keyEquivalent: "") .target = self
-        menu.addItem(withTitle: "캐릭터 관리…", action: #selector(manageCharacters), keyEquivalent: "").target = self
+        let characterItem = NSMenuItem(title: "캐릭터", action: nil, keyEquivalent: "")
+        characterItem.submenu = characterMenu
+        menu.addItem(characterItem)
         menu.addItem(withTitle: "Claude Code 로그인", action: #selector(login), keyEquivalent: "").target = self
         credentialFallbackItem.target = self
         menu.addItem(credentialFallbackItem)
@@ -100,6 +104,25 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "종료", action: #selector(quit), keyEquivalent: "q").target = self
         petView.contextMenu = menu
+    }
+
+    private func rebuildCharacterMenu() {
+        let snapshot = characterRepository.characterMenuSnapshot()
+        if snapshot.didFallbackToBuiltIn {
+            petView.apply(character: characterRepository.selectedCharacter())
+            transientError = "선택한 캐릭터를 불러오지 못해 기본 캐릭터로 돌아갔습니다"
+        }
+
+        characterMenu.removeAllItems()
+        for entry in snapshot.entries {
+            let item = NSMenuItem(title: entry.title, action: #selector(selectCharacter(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = entry.id.uuidString
+            item.state = entry.isSelected ? .on : .off
+            characterMenu.addItem(item)
+        }
+        characterMenu.addItem(.separator())
+        characterMenu.addItem(withTitle: "캐릭터 관리…", action: #selector(manageCharacters), keyEquivalent: "").target = self
     }
 
     private func restorePosition() {
@@ -139,6 +162,22 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     @objc private func login() { onLogin?() }
     @objc private func manageCharacters() { onManageCharacters?() }
     @objc private func quit() { NSApp.terminate(nil) }
+
+    @objc private func selectCharacter(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String, let id = UUID(uuidString: value) else {
+            transientError = "캐릭터 선택 정보를 확인하지 못했습니다"
+            return
+        }
+        do {
+            petView.apply(character: try characterRepository.select(id: id))
+        } catch {
+            if let builtIn = try? characterRepository.select(id: nil) {
+                petView.apply(character: builtIn)
+            }
+            transientError = "캐릭터를 불러오지 못해 기본 캐릭터로 돌아갔습니다"
+        }
+        rebuildCharacterMenu()
+    }
 
     @objc private func toggleLoginItem() {
         do {

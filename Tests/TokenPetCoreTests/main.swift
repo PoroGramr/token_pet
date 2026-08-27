@@ -273,6 +273,54 @@ private func testCharacterProfileAndPercentLayoutContracts() throws {
 }
 
 @MainActor
+private func testBuildsSafeCharacterMenuPresentation() {
+    let builtInID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    let catID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+    let invalidSelectedID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+    let builtIn = CharacterProfile(
+        id: builtInID,
+        name: "기본 캐릭터",
+        frameCount: 4,
+        frameOrder: [0, 1, 2, 3],
+        removesLightBackground: true,
+        percentPosition: NormalizedPoint(x: 0.5, y: 0.5),
+        percentFontSize: 22,
+        framesPerSecond: 3,
+        schemaVersion: 1
+    )
+    let cat = CharacterProfile(
+        id: catID,
+        name: "Cat",
+        frameCount: 3,
+        frameOrder: [0, 1, 2],
+        removesLightBackground: false,
+        percentPosition: NormalizedPoint(x: 0.5, y: 0.5),
+        percentFontSize: 20,
+        framesPerSecond: 3,
+        schemaVersion: 1
+    )
+
+    let selected = CharacterMenuPresentation.make(
+        profiles: [cat, builtIn],
+        builtInID: builtInID,
+        selectedID: catID
+    )
+    runner.expectEqual(selected.entries.map(\.id), [builtInID, catID], "built-in menu entry appears first")
+    runner.expectEqual(selected.entries.map(\.isSelected), [false, true], "valid selected character is checked")
+    runner.expectEqual(selected.selectedID, catID, "valid selected character is retained")
+    runner.expectEqual(selected.didFallbackToBuiltIn, false, "valid selection does not fall back")
+
+    let fallback = CharacterMenuPresentation.make(
+        profiles: [cat, builtIn],
+        builtInID: builtInID,
+        selectedID: invalidSelectedID
+    )
+    runner.expectEqual(fallback.entries.map(\.isSelected), [true, false], "missing selected character checks built-in")
+    runner.expectEqual(fallback.selectedID, builtInID, "missing selected character resolves to built-in")
+    runner.expectEqual(fallback.didFallbackToBuiltIn, true, "missing selected character reports fallback")
+}
+
+@MainActor
 private func testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames() throws {
     for path in ["img/2.png", "img/3.png"] {
         let image = try FrameImageProcessor.makeTransparentImage(from: Data(contentsOf: URL(fileURLWithPath: path)))
@@ -513,6 +561,7 @@ do {
     testSecurityToolFallbackRequiresExplicitConsentAndNeverRunsAfterCancel()
     testDefinesPingPongAnimationSequence()
     try testCharacterProfileAndPercentLayoutContracts()
+    testBuildsSafeCharacterMenuPresentation()
     try testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames()
     try testPreservesExistingTransparency()
     try testPreparesNormalizedTransparentBundleFrames()

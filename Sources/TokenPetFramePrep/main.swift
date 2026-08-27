@@ -11,7 +11,7 @@ let inputDirectory = URL(fileURLWithPath: arguments[1], isDirectory: true)
 let outputDirectory = URL(fileURLWithPath: arguments[2], isDirectory: true)
 try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
-for index in 1...5 {
+for index in 1...4 {
     let input = inputDirectory.appendingPathComponent("\(index).png")
     let output = outputDirectory.appendingPathComponent("\(index).png")
     let sourceData = try Data(contentsOf: input)

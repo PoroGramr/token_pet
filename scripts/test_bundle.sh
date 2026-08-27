@@ -10,13 +10,15 @@ test -f "$app_path/Contents/Info.plist"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Contents/Info.plist")" = "com.park.tokenpet"
 test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$app_path/Contents/Info.plist")" = "true"
 
-for frame in 1 2 3 4 5; do
+for frame in 1 2 3 4; do
     frame_path="$app_path/Contents/Resources/Frames/$frame.png"
     test -f "$frame_path"
     test "$(sips -g pixelWidth "$frame_path" 2>/dev/null | tail -1 | awk '{print $2}')" = "240"
     test "$(sips -g pixelHeight "$frame_path" 2>/dev/null | tail -1 | awk '{print $2}')" = "240"
     test "$(sips -g hasAlpha "$frame_path" 2>/dev/null | tail -1 | awk '{print $2}')" = "yes"
 done
+
+test ! -e "$app_path/Contents/Resources/Frames/5.png"
 
 ! cmp -s "$project_root/img/2.png" "$app_path/Contents/Resources/Frames/2.png"
 ! cmp -s "$project_root/img/3.png" "$app_path/Contents/Resources/Frames/3.png"

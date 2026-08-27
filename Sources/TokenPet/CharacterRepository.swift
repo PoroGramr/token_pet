@@ -21,6 +21,18 @@ final class CharacterRepository {
         [Self.builtInProfile] + ((try? store.list()) ?? [])
     }
 
+    func characterMenuSnapshot() -> CharacterMenuSnapshot {
+        let snapshot = CharacterMenuPresentation.make(
+            profiles: availableCharacters(),
+            builtInID: Self.builtInID,
+            selectedID: store.selectedCharacterID
+        )
+        if snapshot.didFallbackToBuiltIn {
+            store.selectedCharacterID = nil
+        }
+        return snapshot
+    }
+
     func selectedCharacter() -> RuntimeCharacter {
         guard let selectedID = store.selectedCharacterID else {
             return builtInCharacter()
