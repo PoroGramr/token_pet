@@ -2,6 +2,7 @@
 
 - 기준 커밋: `07f2440`
 - 구현 커밋: `34718ba` (`fix: harden character data recovery`)
+- 후속 구현 커밋: `c807a5d` (`fix: remove character recovery artifacts on delete`)
 - 작성일: 2026-08-27
 
 ## 1. `frameCount` validation trap/OOM 방지
@@ -104,6 +105,36 @@
 - `TokenPetCoreTests`: switch target load failure가 기존 selected/draft/dirty를 보존하는지, close reload failure가 dirty를 보존하고 close를 거부하는지 검증했다.
 - successful selection, create-new, successful clean close 분기도 함께 검증했다.
 
+## 후속 Important: 명시 삭제 후 recovery artifact 복원 방지
+
+### RED
+
+- backup cleanup failure가 valid `.backup-<ID>-<nonce>`를 남긴 상태에서 `delete(id:)`를 호출하면 canonical target만 삭제됐다.
+- 다음 `list()`/relaunch에서 orphan recovery가 남은 backup을 target으로 복원했다.
+- artifact cleanup failure seam을 주입해도 기존 delete는 cleanup 경계를 호출하지 않아 canonical target을 삭제하고 selected ID를 clear했다.
+- matching artifact가 외부 디렉터리를 가리키는 symlink여도 기존 delete는 이를 확인하지 않고 canonical target을 삭제했다.
+
+### GREEN / 변경
+
+- `delete(id:)`가 canonical target을 삭제하기 전에 해당 profile의 transaction artifact를 모두 정리한다.
+- root direct leaf 중 `.backup-<profile UUID>-<UUID nonce>`와 `.invalid-target-<profile UUID>-<UUID nonce>`의 엄격한 형식에 일치하는 항목만 대상으로 한다.
+- 다른 profile UUID의 artifact는 건드리지 않는다.
+- matching symlink가 있으면 외부 경로를 따라가지 않고 delete 전체를 거부한다.
+- artifact cleanup이 실패하면 canonical target과 selected ID를 유지한 채 `persistenceFailed`를 반환한다.
+- artifact cleanup이 모두 성공한 후에만 canonical target을 삭제하고 selected ID를 clear하므로 explicit delete 뒤 recovery할 사본이 남지 않는다.
+- `CharacterStoreCommitBoundary.removeTransactionArtifact(at:)` seam을 추가하고 기존 boundary에는 `removeOldBackup(at:)` 기반 default를 제공했다.
+
+### 테스트
+
+- 실제 cleanup-failure save가 남긴 valid backup과 strict-name invalid backup/invalid-target을 삭제한 뒤 relaunch해도 profile이 복원되지 않는지 검증했다.
+- 다른 UUID의 artifact가 유지되는지 검증했다.
+- artifact cleanup failure 주입 시 canonical assets와 selected ID, pending backup이 보존되는지 검증했다.
+- matching artifact symlink가 있으면 canonical/selection을 보존하고 외부 marker가 그대로 남는지 검증했다.
+
+### 커밋
+
+- `c807a5d` (`fix: remove character recovery artifacts on delete`)
+
 ## 전체 검증
 
 다음 명령을 구현 완료 상태에서 fresh run했고 모두 exit 0이었다.
@@ -127,5 +158,5 @@ git diff --check
 ## 남은 우려 / Deferred
 
 - 고해상도 이미지의 background 처리가 main actor에서 수행되는 성능 문제는 이번 데이터 안정성 범위 밖의 Minor로 deferred한다.
-- 복구 시 보존한 `.invalid-target-*`와 invalid `.backup-*`는 자동 삭제하지 않으므로 장기간에는 수동 진단/정리 정책이 필요할 수 있다. 이는 유일한 사용자 asset 사본을 잃지 않기 위한 의도적인 선택이다.
+- 복구 시 보존한 `.invalid-target-*`와 invalid `.backup-*`는 해당 캐릭터를 명시 삭제할 때는 함께 제거되지만, 삭제하지 않은 캐릭터에 대해서는 자동 삭제하지 않는다. 장기간에는 수동 진단/정리 정책이 필요할 수 있으며, 이는 유일한 사용자 asset 사본을 잃지 않기 위한 의도적인 선택이다.
 - UI test backup과 실제 `Application Support` 사용자 데이터는 변경하지 않았다.
