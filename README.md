@@ -2,6 +2,8 @@
 
 TokenPet is a resident macOS widget that shows the remaining percentage of your Claude Code five-hour usage window as an animated pixel character.
 
+[한국어 README](README.ko.md)
+
 https://github.com/user-attachments/assets/867fb61e-efdd-41ae-a45e-e72488457d7f
 
 ## Requirements
