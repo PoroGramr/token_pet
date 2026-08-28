@@ -7,7 +7,7 @@ cask "tokenpet" do
   desc "Animated Claude Code usage token pet"
   homepage "https://github.com/PoroGramr/token_pet"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "TokenPet.app"
 
