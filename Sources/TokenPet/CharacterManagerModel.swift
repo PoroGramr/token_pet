@@ -9,12 +9,14 @@ final class CharacterManagerModel: ObservableObject {
     @Published private(set) var selectedID: UUID?
     @Published private(set) var draft: CharacterDraft?
     @Published private(set) var selectedFrameIndex = 0
+    @Published private(set) var builtInPreview: RuntimeCharacter?
     @Published private(set) var errorMessage: String?
     @Published private(set) var isDirty = false
 
     private let store: CharacterStore
     private let repository: CharacterRepository
     private let languageSettings: LanguageSettings
+    private let builtInSettings: BuiltInCharacterSettings
     private let onApply: (RuntimeCharacter) -> Void
     var confirmDiscard: (() -> Bool)?
 
@@ -22,11 +24,13 @@ final class CharacterManagerModel: ObservableObject {
         store: CharacterStore,
         repository: CharacterRepository,
         languageSettings: LanguageSettings,
+        builtInSettings: BuiltInCharacterSettings,
         onApply: @escaping (RuntimeCharacter) -> Void
     ) {
         self.store = store
         self.repository = repository
         self.languageSettings = languageSettings
+        self.builtInSettings = builtInSettings
         self.onApply = onApply
         reloadProfiles()
     }
@@ -40,8 +44,11 @@ final class CharacterManagerModel: ObservableObject {
         return profiles.contains { $0.id == selectedID }
     }
     var selectedFramePosition: NormalizedPoint? {
-        guard let draft, draft.framePercentPositions.indices.contains(selectedFrameIndex) else { return nil }
-        return draft.framePercentPositions[selectedFrameIndex]
+        if let draft, draft.framePercentPositions.indices.contains(selectedFrameIndex) {
+            return draft.framePercentPositions[selectedFrameIndex]
+        }
+        guard let builtInPreview, builtInPreview.framePercentPositions.indices.contains(selectedFrameIndex) else { return nil }
+        return builtInPreview.framePercentPositions[selectedFrameIndex]
     }
 
     func refresh() {
@@ -135,11 +142,24 @@ final class CharacterManagerModel: ObservableObject {
     }
 
     func selectFrame(index: Int) {
-        guard let draft, draft.displayFrames.indices.contains(index) else { return }
+        guard (draft?.displayFrames.indices.contains(index) ?? false)
+            || (builtInPreview?.frames.indices.contains(index) ?? false) else { return }
         selectedFrameIndex = index
     }
 
     func updateSelectedFramePercentPosition(_ position: NormalizedPoint) {
+        if let builtInPreview {
+            builtInSettings.setPosition(position, for: builtInPreview.profile, at: selectedFrameIndex)
+            do {
+                let refreshed = try repository.builtInCharacterPreview(id: builtInPreview.profile.id)
+                self.builtInPreview = refreshed
+                onApply(refreshed)
+                errorMessage = nil
+            } catch {
+                errorMessage = languageSettings.text("기본 캐릭터 위치를 적용하지 못했습니다.")
+            }
+            return
+        }
         guard var candidate = draft else { return }
         candidate.updateFramePercentPosition(position, at: selectedFrameIndex)
         draft = candidate
@@ -255,6 +275,7 @@ final class CharacterManagerModel: ObservableObject {
             profiles.removeAll { $0.id == id }
             selectedID = CharacterRepository.builtInID
             draft = nil
+            builtInPreview = nil
             selectedFrameIndex = 0
             errorMessage = nil
             isDirty = false
@@ -304,6 +325,12 @@ final class CharacterManagerModel: ObservableObject {
     private func loadSelection(id: UUID) -> Bool {
         let currentState = editorState
         guard !CharacterRepository.builtInIDs.contains(id) else {
+            do {
+                builtInPreview = try repository.builtInCharacterPreview(id: id)
+            } catch {
+                errorMessage = languageSettings.text("기본 캐릭터를 불러오지 못했습니다.")
+                return false
+            }
             let nextState = CharacterEditorStateTransitions.afterSelectionAttempt(
                 current: currentState,
                 loadedSelection: .builtIn(id)
@@ -323,6 +350,7 @@ final class CharacterManagerModel: ObservableObject {
             )
             selectedID = nextState.selectedID
             draft = loadedDraft
+            builtInPreview = nil
             selectedFrameIndex = 0
             errorMessage = nil
             isDirty = nextState.isDirty

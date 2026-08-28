@@ -12,12 +12,14 @@ final class CharacterEditorWindowController: NSObject, NSWindowDelegate {
         store: CharacterStore,
         repository: CharacterRepository,
         languageSettings: LanguageSettings,
+        builtInSettings: BuiltInCharacterSettings,
         onApply: @escaping (RuntimeCharacter) -> Void
     ) {
         let model = CharacterManagerModel(
             store: store,
             repository: repository,
             languageSettings: languageSettings,
+            builtInSettings: builtInSettings,
             onApply: onApply
         )
         self.model = model

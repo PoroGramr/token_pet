@@ -20,9 +20,11 @@ final class CharacterRepository {
     }
 
     private let store: CharacterStore
+    private let builtInSettings: BuiltInCharacterSettings
 
-    init(store: CharacterStore) {
+    init(store: CharacterStore, builtInSettings: BuiltInCharacterSettings) {
         self.store = store
+        self.builtInSettings = builtInSettings
     }
 
     func availableCharacters() throws -> [CharacterProfile] {
@@ -118,12 +120,19 @@ final class CharacterRepository {
             }
             return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
         }
+        var profile = definition.profile
+        profile.framePercentPositions = builtInSettings.positions(for: definition.profile)
+        profile.percentPosition = profile.framePercentPositions?.first ?? definition.profile.percentPosition
         return RuntimeCharacter(
-            profile: definition.profile,
+            profile: profile,
             frames: frames,
-            framePercentPositions: definition.profile.resolvedFramePercentPositions,
+            framePercentPositions: profile.resolvedFramePercentPositions,
             playbackIndices: FrameSequence.indices(frameCount: frames.count)
         )
+    }
+
+    func builtInCharacterPreview(id: UUID) throws -> RuntimeCharacter {
+        try builtInCharacterThrowing(id: id)
     }
 
     private static let batteryProfile = CharacterProfile(

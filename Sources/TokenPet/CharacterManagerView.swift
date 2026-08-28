@@ -100,6 +100,8 @@ struct CharacterManagerView: View {
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        } else if let builtInPreview = model.builtInPreview {
+            builtInEditor(builtInPreview)
         } else {
             VStack(spacing: 18) {
                 Image(systemName: "battery.100")
@@ -117,6 +119,89 @@ struct CharacterManagerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private func builtInEditor(_ character: RuntimeCharacter) -> some View {
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(t(character.profile.name))
+                    .font(.title.bold())
+                Text(t("기본 · 읽기 전용"))
+                    .foregroundStyle(.secondary)
+                Text(t("기본 캐릭터의 이미지와 이름은 보호됩니다. 퍼센트 위치만 직접 조절할 수 있습니다."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                ForEach(character.frames.indices, id: \.self) { index in
+                    Button {
+                        model.selectFrame(index: index)
+                    } label: {
+                        VStack(spacing: 5) {
+                            Image(nsImage: character.frames[index])
+                                .resizable()
+                                .interpolation(.none)
+                                .scaledToFit()
+                                .padding(6)
+                            Text(frameTitle(index))
+                                .font(.caption.bold())
+                        }
+                        .frame(width: 110, height: 120)
+                        .background(Color(nsColor: .windowBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(model.selectedFrameIndex == index ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: model.selectedFrameIndex == index ? 3 : 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            HStack(alignment: .top, spacing: 26) {
+                if character.frames.indices.contains(model.selectedFrameIndex),
+                   let position = model.selectedFramePosition {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(frameTitle(model.selectedFrameIndex) + " " + t("위치 편집"))
+                            .font(.headline)
+                        Text(t("선택한 이미지에서 72%를 드래그하세요."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        CharacterFramePositionEditor(
+                            image: character.frames[model.selectedFrameIndex],
+                            position: position,
+                            fontSize: character.profile.percentFontSize,
+                            onPositionChange: model.updateSelectedFramePercentPosition
+                        )
+                        .frame(width: 300, height: 300)
+                        .background(checkerboard)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.secondary.opacity(0.25)))
+                    }
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(frameTitle(model.selectedFrameIndex) + " " + t("좌표"))
+                            .font(.headline)
+                        numericField(
+                            title: "X",
+                            value: position.x,
+                            range: 0...1,
+                            onChange: { model.updateSelectedFramePercentPosition(.init(x: $0, y: model.selectedFramePosition?.y ?? 0.5)) }
+                        )
+                        numericField(
+                            title: "Y",
+                            value: position.y,
+                            range: 0...1,
+                            onChange: { model.updateSelectedFramePercentPosition(.init(x: model.selectedFramePosition?.x ?? 0.5, y: $0)) }
+                        )
+                    }
+                    .padding(.top, 48)
+                }
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func editorHeader(draft: CharacterDraft) -> some View {

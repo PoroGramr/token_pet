@@ -5,6 +5,7 @@ import TokenPetCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let loginItemManager = LoginItemManager()
     private let languageSettings = LanguageSettings()
+    private let builtInCharacterSettings = BuiltInCharacterSettings()
     private lazy var usageController = UsageController(
         service: AnthropicUsageService(
             credentials: ClaudeKeychainStore(),
@@ -16,7 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         defaults: .standard
     )
     private lazy var characterRepository = CharacterRepository(
-        store: characterStore
+        store: characterStore,
+        builtInSettings: builtInCharacterSettings
     )
     private var panelController: PetPanelController?
     private var characterEditorController: CharacterEditorWindowController?
@@ -33,7 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let characterEditorController = CharacterEditorWindowController(
             store: characterStore,
             repository: characterRepository,
-            languageSettings: languageSettings
+            languageSettings: languageSettings,
+            builtInSettings: builtInCharacterSettings
         ) { [weak panelController] character in
             panelController?.apply(character: character)
         }
