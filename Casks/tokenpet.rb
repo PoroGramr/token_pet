@@ -1,6 +1,6 @@
 cask "tokenpet" do
-  version "0.1.0"
-  sha256 "b0789c7af4ea7275483b7e39cfd41564d7688347ac43445753ba60b9ff535d4f"
+  version "0.1.1"
+  sha256 "5714d5a047cd836eb7596136a853fed73c5ba41bc601245029aec03a27be766a"
 
   url "https://raw.githubusercontent.com/PoroGramr/token_pet/v#{version}/releases/TokenPet-#{version}.dmg"
   name "TokenPet"
