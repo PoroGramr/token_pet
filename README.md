@@ -18,12 +18,14 @@ https://github.com/user-attachments/assets/867fb61e-efdd-41ae-a45e-e72488457d7f
 
 ### Homebrew
 
+처음 한 번 아래 명령으로 TokenPet tap을 등록한 뒤 설치합니다.
+
 ```bash
 brew tap PoroGramr/token_pet https://github.com/PoroGramr/token_pet.git
 brew install --cask PoroGramr/token_pet/tokenpet
 ```
 
-Homebrew용 DMG는 버전 태그에 포함됩니다.
+이후 업데이트는 `brew upgrade --cask tokenpet`으로 할 수 있습니다. Homebrew용 DMG는 버전 태그에 포함됩니다.
 
 ### 소스에서 설치
 
