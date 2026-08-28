@@ -16,6 +16,17 @@ https://github.com/user-attachments/assets/867fb61e-efdd-41ae-a45e-e72488457d7f
 
 ## 설치
 
+### Homebrew
+
+```bash
+brew tap PoroGramr/token_pet https://github.com/PoroGramr/token_pet.git
+brew install --cask PoroGramr/token_pet/tokenpet
+```
+
+Homebrew용 DMG는 버전 태그에 포함됩니다.
+
+### 소스에서 설치
+
 ```bash
 ./scripts/install.sh
 ```
@@ -49,6 +60,7 @@ swift run TokenPetServiceTests
 swift run TokenPetCharacterStoreTests
 ./scripts/build_app.sh
 ./scripts/test_bundle.sh
+./scripts/package_dmg.sh
 ```
 
 자격 증명 오류가 계속되면 먼저 `claude auth status`로 Claude Code 로그인 상태를 확인한 뒤 우클릭 메뉴의 `새로고침`을 누르세요.
