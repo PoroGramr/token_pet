@@ -195,6 +195,16 @@ struct CharacterManagerView: View {
                             range: 0...1,
                             onChange: { model.updateSelectedFramePercentPosition(.init(x: model.selectedFramePosition?.x ?? 0.5, y: $0)) }
                         )
+                        Text(t("글자 크기") + " " + String(Int(character.profile.percentFontSize.rounded())) + "pt")
+                        Slider(
+                            value: Binding(
+                                get: { character.profile.percentFontSize },
+                                set: { model.updateFontSize($0) }
+                            ),
+                            in: 10...36,
+                            step: 1
+                        )
+                        .frame(width: 220)
                     }
                     .padding(.top, 48)
                 }

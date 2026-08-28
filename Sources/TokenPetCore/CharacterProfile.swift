@@ -42,7 +42,7 @@ public struct CharacterProfile: Codable, Equatable, Identifiable, Sendable {
     }
 
     public var resolvedFramePercentPositions: [NormalizedPoint] {
-        guard (3...4).contains(frameCount) else { return [] }
+        guard frameCount >= 2 else { return [] }
         guard let framePercentPositions, framePercentPositions.count == frameCount else {
             return Array(repeating: percentPosition, count: frameCount)
         }

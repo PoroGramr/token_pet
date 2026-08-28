@@ -91,6 +91,7 @@ final class LanguageSettings: ObservableObject {
         "입력 내용을 확인해 주세요.": "Check the entered values.",
         "기본 캐릭터 위치를 적용하지 못했습니다.": "Could not apply the default character position.",
         "기본 캐릭터를 불러오지 못했습니다.": "Could not load the default character.",
+        "기본 캐릭터 글자 크기를 적용하지 못했습니다.": "Could not apply the default character text size.",
         "기본 캐릭터": "Default Character",
         "배터리": "Battery",
         "버섯": "Mushroom",

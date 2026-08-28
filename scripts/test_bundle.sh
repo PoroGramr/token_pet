@@ -20,13 +20,14 @@ done
 
 test ! -e "$app_path/Contents/Resources/Frames/battery/5.png"
 
-for frame in orange-mushroom-idle orange-mushroom-airborne orange-mushroom-landing; do
+for frame in orange-mushroom-idle orange-mushroom-landing; do
     frame_path="$app_path/Contents/Resources/Frames/mushroom/$frame.png"
     test -f "$frame_path"
     test "$(sips -g pixelWidth "$frame_path" 2>/dev/null | tail -1 | awk '{print $2}')" = "240"
     test "$(sips -g pixelHeight "$frame_path" 2>/dev/null | tail -1 | awk '{print $2}')" = "240"
     test "$(sips -g hasAlpha "$frame_path" 2>/dev/null | tail -1 | awk '{print $2}')" = "yes"
 done
+test ! -e "$app_path/Contents/Resources/Frames/mushroom/orange-mushroom-airborne.png"
 
 ! cmp -s "$project_root/img/battery/2.png" "$app_path/Contents/Resources/Frames/battery/2.png"
 ! cmp -s "$project_root/img/battery/3.png" "$app_path/Contents/Resources/Frames/battery/3.png"

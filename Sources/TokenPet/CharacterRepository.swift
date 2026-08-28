@@ -123,6 +123,7 @@ final class CharacterRepository {
         var profile = definition.profile
         profile.framePercentPositions = builtInSettings.positions(for: definition.profile)
         profile.percentPosition = profile.framePercentPositions?.first ?? definition.profile.percentPosition
+        profile.percentFontSize = builtInSettings.fontSize(for: definition.profile)
         return RuntimeCharacter(
             profile: profile,
             frames: frames,
@@ -151,21 +152,20 @@ final class CharacterRepository {
     private static let mushroomProfile = CharacterProfile(
         id: mushroomBuiltInID,
         name: "버섯",
-        frameCount: 3,
-        frameOrder: [0, 1, 2],
+        frameCount: 2,
+        frameOrder: [0, 1],
         removesLightBackground: false,
-        percentPosition: NormalizedPoint(x: 0.5, y: 0.52),
+        percentPosition: NormalizedPoint(x: 0.5, y: 0.27),
         percentFontSize: 22,
         framesPerSecond: FrameSequence.framesPerSecond,
         schemaVersion: 1,
-        framePercentPositions: Array(repeating: NormalizedPoint(x: 0.5, y: 0.52), count: 3)
+        framePercentPositions: Array(repeating: NormalizedPoint(x: 0.5, y: 0.27), count: 2)
     )
 
     private static let builtInDefinitions: [BuiltInCharacterDefinition] = [
         .init(profile: batteryProfile, framePaths: ["battery/1.png", "battery/2.png", "battery/3.png", "battery/4.png"]),
         .init(profile: mushroomProfile, framePaths: [
             "mushroom/orange-mushroom-idle.png",
-            "mushroom/orange-mushroom-airborne.png",
             "mushroom/orange-mushroom-landing.png"
         ])
     ]

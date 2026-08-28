@@ -167,6 +167,18 @@ final class CharacterManagerModel: ObservableObject {
     }
 
     func updateFontSize(_ fontSize: Double) {
+        if let builtInPreview {
+            builtInSettings.setFontSize(fontSize, for: builtInPreview.profile)
+            do {
+                let refreshed = try repository.builtInCharacterPreview(id: builtInPreview.profile.id)
+                self.builtInPreview = refreshed
+                onApply(refreshed)
+                errorMessage = nil
+            } catch {
+                errorMessage = languageSettings.text("기본 캐릭터 글자 크기를 적용하지 못했습니다.")
+            }
+            return
+        }
         guard var candidate = draft else { return }
         candidate.percentFontSize = min(36, max(10, fontSize))
         draft = candidate
