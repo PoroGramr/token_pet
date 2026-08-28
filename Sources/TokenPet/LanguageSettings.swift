@@ -24,7 +24,7 @@ final class LanguageSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        language = AppLanguage(rawValue: defaults.string(forKey: Self.defaultsKey) ?? "") ?? .korean
+        language = AppLanguage(rawValue: defaults.string(forKey: Self.defaultsKey) ?? "") ?? .english
     }
 
     func text(_ korean: String) -> String {
