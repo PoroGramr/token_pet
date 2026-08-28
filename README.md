@@ -1,6 +1,12 @@
+
+
+
 # TokenPet
 
 Claude Code의 5시간 사용량 한도에서 남은 비율을 애니메이션 캐릭터로 표시하는 macOS 상주 위젯입니다.
+
+https://github.com/user-attachments/assets/867fb61e-efdd-41ae-a45e-e72488457d7f
+
 
 ## 요구 사항
 
