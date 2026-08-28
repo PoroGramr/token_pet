@@ -1,7 +1,6 @@
 
+<img width="610" height="121" alt="스크린샷 2026-08-28 오후 2 47 27" src="https://github.com/user-attachments/assets/8d8587dc-5929-4cf8-b1e0-88d39984f969" />
 
-
-# TokenPet
 
 Claude Code의 5시간 사용량 한도에서 남은 비율을 애니메이션 캐릭터로 표시하는 macOS 상주 위젯입니다.
 
