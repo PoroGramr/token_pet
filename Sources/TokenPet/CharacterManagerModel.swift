@@ -31,12 +31,12 @@ final class CharacterManagerModel: ObservableObject {
         reloadProfiles()
     }
 
-    var isBuiltInSelected: Bool { selectedID == CharacterRepository.builtInID }
+    var isBuiltInSelected: Bool { selectedID.map(CharacterRepository.builtInIDs.contains) ?? false }
     var editorState: CharacterEditorDraftState {
         CharacterEditorDraftState(selectedID: selectedID, draftID: draft?.id, isDirty: isDirty)
     }
     var canDeleteSelected: Bool {
-        guard let selectedID, selectedID != CharacterRepository.builtInID else { return false }
+        guard let selectedID, !CharacterRepository.builtInIDs.contains(selectedID) else { return false }
         return profiles.contains { $0.id == selectedID }
     }
     var selectedFramePosition: NormalizedPoint? {
@@ -191,7 +191,7 @@ final class CharacterManagerModel: ObservableObject {
 
     func saveAndApply() {
         guard var candidate = draft else { return }
-        let existingNames = profiles.filter { $0.id != candidate.id && $0.id != CharacterRepository.builtInID }.map(\.name)
+        let existingNames = profiles.filter { $0.id != candidate.id && !CharacterRepository.builtInIDs.contains($0.id) }.map(\.name)
         let validation = candidate.validation(existingNames: existingNames)
         guard validation.isValid else {
             errorMessage = validationMessage(for: validation.errors)
@@ -245,7 +245,7 @@ final class CharacterManagerModel: ObservableObject {
     }
 
     func deleteSelected() {
-        guard let id = selectedID, id != CharacterRepository.builtInID else { return }
+        guard let id = selectedID, !CharacterRepository.builtInIDs.contains(id) else { return }
         do {
             let deletesAppliedCharacter = store.selectedCharacterID == id
             try store.delete(id: id)
@@ -303,7 +303,7 @@ final class CharacterManagerModel: ObservableObject {
     @discardableResult
     private func loadSelection(id: UUID) -> Bool {
         let currentState = editorState
-        guard id != CharacterRepository.builtInID else {
+        guard !CharacterRepository.builtInIDs.contains(id) else {
             let nextState = CharacterEditorStateTransitions.afterSelectionAttempt(
                 current: currentState,
                 loadedSelection: .builtIn(id)

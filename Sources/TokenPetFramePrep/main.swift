@@ -11,10 +11,23 @@ let inputDirectory = URL(fileURLWithPath: arguments[1], isDirectory: true)
 let outputDirectory = URL(fileURLWithPath: arguments[2], isDirectory: true)
 try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
-for index in 1...4 {
-    let input = inputDirectory.appendingPathComponent("\(index).png")
-    let output = outputDirectory.appendingPathComponent("\(index).png")
-    let sourceData = try Data(contentsOf: input)
-    let normalizedData = try FrameImageProcessor.makeNormalizedPNG(from: sourceData, pixelSize: 240)
+let enumerator = FileManager.default.enumerator(
+    at: inputDirectory,
+    includingPropertiesForKeys: [.isRegularFileKey],
+    options: [.skipsHiddenFiles]
+)
+let inputPaths = (enumerator?.allObjects as? [URL] ?? [])
+    .filter { $0.pathExtension.lowercased() == "png" }
+    .sorted { $0.path < $1.path }
+
+guard !inputPaths.isEmpty else {
+    throw CocoaError(.fileNoSuchFile)
+}
+
+for input in inputPaths {
+    let relativePath = input.path.replacingOccurrences(of: inputDirectory.path + "/", with: "")
+    let output = outputDirectory.appendingPathComponent(relativePath)
+    try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let normalizedData = try FrameImageProcessor.makeNormalizedPNG(from: Data(contentsOf: input), pixelSize: 240)
     try normalizedData.write(to: output, options: .atomic)
 }

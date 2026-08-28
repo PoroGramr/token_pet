@@ -41,12 +41,12 @@ struct CharacterManagerView: View {
                     model.selectProfile(id: profile.id)
                 } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: profile.id == CharacterRepository.builtInID ? "battery.100" : "photo.stack")
+                        Image(systemName: CharacterRepository.builtInIDs.contains(profile.id) ? "battery.100" : "photo.stack")
                             .frame(width: 20)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(profile.id == CharacterRepository.builtInID ? t(profile.name) : profile.name)
+                            Text(CharacterRepository.builtInIDs.contains(profile.id) ? t(profile.name) : profile.name)
                                 .lineLimit(1)
-                            if profile.id == CharacterRepository.builtInID {
+                            if CharacterRepository.builtInIDs.contains(profile.id) {
                                 Text(t("기본 · 읽기 전용"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)

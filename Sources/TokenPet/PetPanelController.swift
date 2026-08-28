@@ -154,7 +154,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
 
         characterMenu.removeAllItems()
         for entry in CharacterMenuStructureDescriptor.standard.selectionItems(for: snapshot) {
-            let title = entry.representedID == CharacterRepository.builtInID.uuidString
+            let title = CharacterRepository.builtInIDs.contains(UUID(uuidString: entry.representedID) ?? UUID())
                 ? languageSettings.text(entry.title)
                 : entry.title
             let item = NSMenuItem(title: title, action: #selector(selectCharacter(_:)), keyEquivalent: "")

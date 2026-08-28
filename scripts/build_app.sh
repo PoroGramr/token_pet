@@ -34,7 +34,7 @@ for specification in \
     "1024 icon_512x512@2x.png"; do
     size="${specification%% *}"
     filename="${specification#* }"
-    sips -z "$size" "$size" "$project_root/img/4.png" --out "$iconset_path/$filename" >/dev/null
+    sips -z "$size" "$size" "$project_root/img/battery/4.png" --out "$iconset_path/$filename" >/dev/null
 done
 iconutil -c icns "$iconset_path" -o "$staging_path/Contents/Resources/TokenPet.icns"
 

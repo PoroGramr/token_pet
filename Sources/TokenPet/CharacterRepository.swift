@@ -11,21 +11,30 @@ struct RuntimeCharacter {
 @MainActor
 final class CharacterRepository {
     static let builtInID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    static let mushroomBuiltInID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+    static let builtInIDs: Set<UUID> = [builtInID, mushroomBuiltInID]
+
+    private struct BuiltInCharacterDefinition {
+        let profile: CharacterProfile
+        let framePaths: [String]
+    }
 
     private let store: CharacterStore
-    private let menuResolver: CharacterMenuResolver
 
     init(store: CharacterStore) {
         self.store = store
-        menuResolver = CharacterMenuResolver(catalog: store, builtInProfile: Self.builtInProfile)
     }
 
     func availableCharacters() throws -> [CharacterProfile] {
-        [Self.builtInProfile] + (try store.list())
+        Self.builtInDefinitions.map(\.profile) + (try store.list())
     }
 
     func characterMenuPresentation() throws -> CharacterMenuSnapshot {
-        try menuResolver.presentation()
+        CharacterMenuPresentation.make(
+            profiles: try availableCharacters(),
+            builtInID: Self.builtInID,
+            selectedID: store.selectedCharacterID
+        )
     }
 
     var persistedSelectedCharacterID: UUID? {
@@ -34,24 +43,31 @@ final class CharacterRepository {
 
     func selectedCharacter() -> RuntimeCharacter {
         guard let selectedID = store.selectedCharacterID else {
-            return builtInCharacter()
+            return builtInCharacter(id: Self.builtInID)
         }
         do {
-            let profiles = try store.list()
-            guard profiles.contains(where: { $0.id == selectedID }) else {
+            if Self.builtInIDs.contains(selectedID) {
+                return try select(id: selectedID)
+            }
+            guard try store.list().contains(where: { $0.id == selectedID }) else {
                 store.selectedCharacterID = nil
-                return builtInCharacter()
+                return builtInCharacter(id: Self.builtInID)
             }
             return try select(id: selectedID)
         } catch {
-            return builtInCharacter()
+            return builtInCharacter(id: Self.builtInID)
         }
     }
 
     func select(id: UUID?) throws -> RuntimeCharacter {
-        guard let id, id != Self.builtInID else {
+        guard let id else {
             store.selectedCharacterID = nil
-            return builtInCharacter()
+            return builtInCharacter(id: Self.builtInID)
+        }
+        if Self.builtInIDs.contains(id) {
+            let character = try builtInCharacterThrowing(id: id)
+            store.selectedCharacterID = id == Self.builtInID ? nil : id
+            return character
         }
 
         let assets = try store.load(id: id)
@@ -81,21 +97,38 @@ final class CharacterRepository {
         return character
     }
 
-    private func builtInCharacter() -> RuntimeCharacter {
-        RuntimeCharacter(
-            profile: Self.builtInProfile,
-            frames: Self.loadBuiltInFrames(),
-            framePercentPositions: Array(
-                repeating: Self.builtInProfile.percentPosition,
-                count: Self.builtInProfile.frameCount
-            ),
-            playbackIndices: FrameSequence.indices(frameCount: 4)
+    private func builtInCharacter(id: UUID) -> RuntimeCharacter {
+        (try? builtInCharacterThrowing(id: id)) ?? RuntimeCharacter(
+            profile: Self.batteryProfile,
+            frames: [],
+            framePercentPositions: [],
+            playbackIndices: []
         )
     }
 
-    private static let builtInProfile = CharacterProfile(
+    private func builtInCharacterThrowing(id: UUID) throws -> RuntimeCharacter {
+        guard let definition = Self.builtInDefinitions.first(where: { $0.profile.id == id }) else {
+            throw CharacterStoreError.unreadableAssets
+        }
+        let frames = try definition.framePaths.map { path -> NSImage in
+            guard let url = Self.builtInFrameURL(path: path),
+                  let data = try? Data(contentsOf: url),
+                  let image = try? FrameImageProcessor.makeTransparentImage(from: data) else {
+                throw CharacterStoreError.unreadableAssets
+            }
+            return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        }
+        return RuntimeCharacter(
+            profile: definition.profile,
+            frames: frames,
+            framePercentPositions: definition.profile.resolvedFramePercentPositions,
+            playbackIndices: FrameSequence.indices(frameCount: frames.count)
+        )
+    }
+
+    private static let batteryProfile = CharacterProfile(
         id: builtInID,
-        name: "기본 캐릭터",
+        name: "배터리",
         frameCount: 4,
         frameOrder: [0, 1, 2, 3],
         removesLightBackground: true,
@@ -103,30 +136,38 @@ final class CharacterRepository {
         percentFontSize: 22,
         framesPerSecond: FrameSequence.framesPerSecond,
         schemaVersion: 1,
-        framePercentPositions: Array(
-            repeating: NormalizedPoint(x: 0.5, y: 52.0 / 120.0),
-            count: 4
-        )
+        framePercentPositions: Array(repeating: NormalizedPoint(x: 0.5, y: 52.0 / 120.0), count: 4)
     )
 
-    private static func loadBuiltInFrames() -> [NSImage] {
-        (1...4).compactMap { index in
-            guard let url = builtInFrameURL(index: index),
-                  let data = try? Data(contentsOf: url),
-                  let image = try? FrameImageProcessor.makeTransparentImage(from: data) else {
-                return nil
-            }
-            return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-        }
-    }
+    private static let mushroomProfile = CharacterProfile(
+        id: mushroomBuiltInID,
+        name: "버섯",
+        frameCount: 3,
+        frameOrder: [0, 1, 2],
+        removesLightBackground: false,
+        percentPosition: NormalizedPoint(x: 0.5, y: 0.52),
+        percentFontSize: 22,
+        framesPerSecond: FrameSequence.framesPerSecond,
+        schemaVersion: 1,
+        framePercentPositions: Array(repeating: NormalizedPoint(x: 0.5, y: 0.52), count: 3)
+    )
 
-    private static func builtInFrameURL(index: Int) -> URL? {
+    private static let builtInDefinitions: [BuiltInCharacterDefinition] = [
+        .init(profile: batteryProfile, framePaths: ["battery/1.png", "battery/2.png", "battery/3.png", "battery/4.png"]),
+        .init(profile: mushroomProfile, framePaths: [
+            "mushroom/orange-mushroom-idle.png",
+            "mushroom/orange-mushroom-airborne.png",
+            "mushroom/orange-mushroom-landing.png"
+        ])
+    ]
+
+    private static func builtInFrameURL(path: String) -> URL? {
         if let resourceURL = Bundle.main.resourceURL {
-            let bundled = resourceURL.appendingPathComponent("Frames/\(index).png")
+            let bundled = resourceURL.appendingPathComponent("Frames/\(path)")
             if FileManager.default.fileExists(atPath: bundled.path) { return bundled }
         }
         let development = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent("img/\(index).png")
+            .appendingPathComponent("img/\(path)")
         return FileManager.default.fileExists(atPath: development.path) ? development : nil
     }
 }

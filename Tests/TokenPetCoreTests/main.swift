@@ -633,7 +633,7 @@ private func testEditorDiscardTransitionsPreserveDirtyDraftUntilReplacementLoads
 
 @MainActor
 private func testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames() throws {
-    for path in ["img/2.png", "img/3.png"] {
+    for path in ["img/battery/2.png", "img/battery/3.png"] {
         let image = try FrameImageProcessor.makeTransparentImage(from: Data(contentsOf: URL(fileURLWithPath: path)))
         runner.expectEqual(alphaValue(in: image, x: 0, y: 0), 0, "transparent corner for \(path)")
         runner.expectTrue(alphaValue(in: image, x: image.width / 2, y: image.height / 2) > 240, "opaque body for \(path)")
@@ -642,7 +642,7 @@ private func testRemovesConnectedCheckerboardBackgroundFromOpaqueFrames() throws
 
 @MainActor
 private func testPreservesExistingTransparency() throws {
-    let image = try FrameImageProcessor.makeTransparentImage(from: Data(contentsOf: URL(fileURLWithPath: "img/1.png")))
+    let image = try FrameImageProcessor.makeTransparentImage(from: Data(contentsOf: URL(fileURLWithPath: "img/battery/1.png")))
     runner.expectEqual(alphaValue(in: image, x: 0, y: 0), 0, "existing transparent corner")
     runner.expectTrue(alphaValue(in: image, x: image.width / 2, y: image.height / 2) > 240, "existing opaque body")
 }
@@ -650,7 +650,7 @@ private func testPreservesExistingTransparency() throws {
 @MainActor
 private func testPreparesNormalizedTransparentBundleFrames() throws {
     for index in 1...4 {
-        let sourceData = try Data(contentsOf: URL(fileURLWithPath: "img/\(index).png"))
+        let sourceData = try Data(contentsOf: URL(fileURLWithPath: "img/battery/\(index).png"))
         let pngData = try FrameImageProcessor.makeNormalizedPNG(from: sourceData, pixelSize: 240)
         guard let source = CGImageSourceCreateWithData(pngData as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
@@ -665,7 +665,7 @@ private func testPreparesNormalizedTransparentBundleFrames() throws {
 
 @MainActor
 private func testReversibleFrameProcessingPreservesSourceUntilDisplayRemoval() throws {
-    let opaqueInput = try Data(contentsOf: URL(fileURLWithPath: "img/2.png"))
+    let opaqueInput = try Data(contentsOf: URL(fileURLWithPath: "img/battery/2.png"))
     let source = try FrameImageProcessor.makeNormalizedSourcePNG(from: opaqueInput, pixelSize: 240)
     let preserved = try FrameImageProcessor.makeDisplayPNG(fromNormalizedSource: source, removingLightBackground: false)
     let removed = try FrameImageProcessor.makeDisplayPNG(fromNormalizedSource: source, removingLightBackground: true)
@@ -694,7 +694,7 @@ private func testReversibleProcessingHandlesNonSquareJPEGAndAlphaPNG() throws {
     runner.expectEqual(alphaValue(in: try decodePNG(removedJPEG), x: 0, y: 0), 0, "display true removes connected light background")
 
     let alphaSource = try FrameImageProcessor.makeNormalizedSourcePNG(
-        from: Data(contentsOf: URL(fileURLWithPath: "img/1.png")), pixelSize: 240
+        from: Data(contentsOf: URL(fileURLWithPath: "img/battery/1.png")), pixelSize: 240
     )
     let alphaPreserved = try FrameImageProcessor.makeDisplayPNG(fromNormalizedSource: alphaSource, removingLightBackground: false)
     let alphaPreservedImage = try decodePNG(alphaPreserved)

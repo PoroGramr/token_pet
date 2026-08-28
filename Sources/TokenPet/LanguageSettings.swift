@@ -90,6 +90,8 @@ final class LanguageSettings: ObservableObject {
         "글자 크기는 10~36pt로 설정해 주세요.": "Text size must be between 10 and 36 pt.",
         "입력 내용을 확인해 주세요.": "Check the entered values.",
         "기본 캐릭터": "Default Character",
+        "배터리": "Battery",
+        "버섯": "Mushroom",
         "기본 · 읽기 전용": "Default · Read-only",
         "기본 캐릭터는 읽기 전용입니다.\n새 캐릭터를 추가하거나 왼쪽 목록에서 편집할 캐릭터를 선택하세요.": "The default character is read-only.\nAdd a character or choose one from the list to edit.",
         "새 캐릭터": "New Character",
