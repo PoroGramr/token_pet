@@ -142,11 +142,16 @@ final class CharacterRepository {
         frameCount: 4,
         frameOrder: [0, 1, 2, 3],
         removesLightBackground: true,
-        percentPosition: NormalizedPoint(x: 0.5, y: 52.0 / 120.0),
-        percentFontSize: 22,
+        percentPosition: NormalizedPoint(x: 0.51, y: 0.47),
+        percentFontSize: 15,
         framesPerSecond: FrameSequence.framesPerSecond,
         schemaVersion: 1,
-        framePercentPositions: Array(repeating: NormalizedPoint(x: 0.5, y: 52.0 / 120.0), count: 4)
+        framePercentPositions: [
+            NormalizedPoint(x: 0.51, y: 0.47),
+            NormalizedPoint(x: 0.5027994791666667, y: 0.4048046875),
+            NormalizedPoint(x: 0.51, y: 0.47),
+            NormalizedPoint(x: 0.51, y: 0.47)
+        ]
     )
 
     private static let mushroomProfile = CharacterProfile(
@@ -155,11 +160,14 @@ final class CharacterRepository {
         frameCount: 2,
         frameOrder: [0, 1],
         removesLightBackground: false,
-        percentPosition: NormalizedPoint(x: 0.5, y: 0.27),
+        percentPosition: NormalizedPoint(x: 0.5059375, y: 0.774140625),
         percentFontSize: 22,
         framesPerSecond: FrameSequence.framesPerSecond,
         schemaVersion: 1,
-        framePercentPositions: Array(repeating: NormalizedPoint(x: 0.5, y: 0.27), count: 2)
+        framePercentPositions: [
+            NormalizedPoint(x: 0.5059375, y: 0.774140625),
+            NormalizedPoint(x: 0.49971354166666665, y: 0.6730078125000001)
+        ]
     )
 
     private static let builtInDefinitions: [BuiltInCharacterDefinition] = [
