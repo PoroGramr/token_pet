@@ -6,11 +6,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let loginItemManager = LoginItemManager()
     private let languageSettings = LanguageSettings()
     private let builtInCharacterSettings = BuiltInCharacterSettings()
+    private let refreshInterval = RefreshInterval.load()
     private lazy var usageController = UsageController(
         service: AnthropicUsageService(
             credentials: ClaudeKeychainStore(),
             transport: URLSessionUsageTransport()
-        )
+        ),
+        refreshInterval: refreshInterval.timeInterval
     )
     private lazy var characterStore = CharacterStore(
         rootURL: Self.characterStorageRoot,
@@ -42,6 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.characterEditorController = characterEditorController
         panelController.onRefresh = { [weak self] in self?.usageController.refresh(manual: true) }
+        panelController.onRefreshIntervalChanged = { [weak self] interval in
+            self?.usageController.setRefreshInterval(interval.timeInterval)
+        }
         panelController.onLogin = { [weak self] in self?.startClaudeLogin() }
         panelController.onCredentialFallbackChanged = { [weak self] in self?.usageController.refresh(manual: false) }
         panelController.onManageCharacters = { [weak characterEditorController] in

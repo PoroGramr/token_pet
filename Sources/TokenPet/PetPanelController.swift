@@ -22,8 +22,10 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     private var state: UsageDisplayState = .loading
     private var transientError: String?
     private var offeredCredentialFallback = false
+    private var refreshInterval = RefreshInterval.load()
 
     var onRefresh: (() -> Void)?
+    var onRefreshIntervalChanged: ((RefreshInterval) -> Void)?
     var onLogin: (() -> Void)?
     var onCredentialFallbackChanged: (() -> Void)?
     var onManageCharacters: (() -> Void)?
@@ -106,6 +108,21 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         menu.addItem(statusItem)
         menu.addItem(.separator())
         menu.addItem(withTitle: languageSettings.text("새로고침"), action: #selector(refresh), keyEquivalent: "r").target = self
+        let refreshIntervalItem = NSMenuItem(title: languageSettings.text("자동 새로고침 간격"), action: nil, keyEquivalent: "")
+        let refreshIntervalMenu = NSMenu()
+        for interval in RefreshInterval.allCases {
+            let item = NSMenuItem(
+                title: languageSettings.text(interval.koreanTitle),
+                action: #selector(selectRefreshInterval(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = interval.rawValue
+            item.state = interval == refreshInterval ? .on : .off
+            refreshIntervalMenu.addItem(item)
+        }
+        refreshIntervalItem.submenu = refreshIntervalMenu
+        menu.addItem(refreshIntervalItem)
         menu.addItem(withTitle: languageSettings.text("우측 하단으로 이동"), action: #selector(resetPosition), keyEquivalent: "") .target = self
         for descriptor in CharacterMenuStructureDescriptor.standard.rootItems {
             switch descriptor.role {
@@ -213,6 +230,16 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     }
 
     @objc private func refresh() { onRefresh?() }
+
+    @objc private func selectRefreshInterval(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? Int,
+              let interval = RefreshInterval(rawValue: rawValue),
+              interval != refreshInterval else { return }
+        refreshInterval = interval
+        interval.save()
+        configureMenu()
+        onRefreshIntervalChanged?(interval)
+    }
     @objc private func login() { onLogin?() }
     @objc private func manageCharacters() { onManageCharacters?() }
     @objc private func quit() { NSApp.terminate(nil) }

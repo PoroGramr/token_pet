@@ -11,6 +11,7 @@ final class UsageController: NSObject {
     private let service: AnthropicUsageService
     private var stateMachine = UsageStateMachine()
     private var refreshTimer: Timer?
+    private var refreshInterval: TimeInterval
     private var loginTimer: Timer?
     private var refreshTask: Task<Void, Never>?
     private var lastRequestStartedAt: Date?
@@ -22,14 +23,27 @@ final class UsageController: NSObject {
     }
     var onStateChange: ((UsageDisplayState) -> Void)?
 
-    init(service: AnthropicUsageService) {
+    init(service: AnthropicUsageService, refreshInterval: TimeInterval = RefreshInterval.fiveMinutes.timeInterval) {
         self.service = service
+        self.refreshInterval = refreshInterval
         super.init()
     }
 
     func start() {
         refresh(manual: false)
-        let timer = Timer(timeInterval: 300, target: self, selector: #selector(periodicRefresh), userInfo: nil, repeats: true)
+        scheduleRefreshTimer()
+    }
+
+    func setRefreshInterval(_ interval: TimeInterval) {
+        guard interval > 0, refreshInterval != interval else { return }
+        refreshInterval = interval
+        guard refreshTimer != nil else { return }
+        refreshTimer?.invalidate()
+        scheduleRefreshTimer()
+    }
+
+    private func scheduleRefreshTimer() {
+        let timer = Timer(timeInterval: refreshInterval, target: self, selector: #selector(periodicRefresh), userInfo: nil, repeats: true)
         RunLoop.main.add(timer, forMode: .common)
         refreshTimer = timer
     }
