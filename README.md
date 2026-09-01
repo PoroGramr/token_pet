@@ -1,6 +1,6 @@
 <img width="610" height="121" alt="스크린샷 2026-08-28 오후 2 47 27" src="https://github.com/user-attachments/assets/8d8587dc-5929-4cf8-b1e0-88d39984f969" />
 
-TokenPet is a resident macOS widget that shows the remaining percentage of your Claude Code five-hour usage window as an animated pixel character.
+TokenPet is a resident macOS widget that shows the remaining percentage of your Claude Code or Codex usage as an animated pixel character.
 
 [한국어 README](README.ko.md)
 
@@ -43,6 +43,10 @@ The app is installed to `~/Applications/TokenPet.app` and opened automatically. 
 - Right-click it to refresh, reset its position, change or manage characters, sign in to Claude Code, configure launch at login, switch language, or quit.
 - `72%` means 72% remains in the five-hour usage window.
 - `!` means the last successful usage value is being shown because of a network error.
+
+### Codex usage
+
+Choose **Usage Source → Codex**. TokenPet automatically reads the current ChatGPT Codex rate limit through the local Codex App Server and refreshes it at the configured interval. Codex CLI must be installed and signed in with ChatGPT.
 
 ### Characters
 

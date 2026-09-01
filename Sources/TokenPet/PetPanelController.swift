@@ -23,6 +23,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     private var transientError: String?
     private var offeredCredentialFallback = false
     private var refreshInterval = RefreshInterval.load()
+    private var usageSource = UsageSource.load()
 
     var onRefresh: (() -> Void)?
     var onRefreshIntervalChanged: ((RefreshInterval) -> Void)?
@@ -30,6 +31,7 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     var onCredentialFallbackChanged: (() -> Void)?
     var onManageCharacters: (() -> Void)?
     var onLanguageChanged: (() -> Void)?
+    var onUsageSourceChanged: ((UsageSource) -> Void)?
 
     init(
         loginItemManager: LoginItemManager,
@@ -107,15 +109,22 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         statusItem.isEnabled = false
         menu.addItem(statusItem)
         menu.addItem(.separator())
+        let sourceItem = NSMenuItem(title: languageSettings.text("사용량 제공자"), action: nil, keyEquivalent: "")
+        let sourceMenu = NSMenu()
+        for source in UsageSource.allCases {
+            let item = NSMenuItem(title: source.koreanTitle, action: #selector(selectUsageSource(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = source.rawValue
+            item.state = source == usageSource ? .on : .off
+            sourceMenu.addItem(item)
+        }
+        sourceItem.submenu = sourceMenu
+        menu.addItem(sourceItem)
         menu.addItem(withTitle: languageSettings.text("새로고침"), action: #selector(refresh), keyEquivalent: "r").target = self
         let refreshIntervalItem = NSMenuItem(title: languageSettings.text("자동 새로고침 간격"), action: nil, keyEquivalent: "")
         let refreshIntervalMenu = NSMenu()
         for interval in RefreshInterval.allCases {
-            let item = NSMenuItem(
-                title: languageSettings.text(interval.koreanTitle),
-                action: #selector(selectRefreshInterval(_:)),
-                keyEquivalent: ""
-            )
+            let item = NSMenuItem(title: languageSettings.text(interval.koreanTitle), action: #selector(selectRefreshInterval(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = interval.rawValue
             item.state = interval == refreshInterval ? .on : .off
@@ -149,10 +158,12 @@ final class PetPanelController: NSObject, NSMenuDelegate {
         }
         languageItem.submenu = languageMenu
         menu.addItem(languageItem)
-        menu.addItem(withTitle: languageSettings.text("Claude Code 로그인"), action: #selector(login), keyEquivalent: "").target = self
-        credentialFallbackItem.title = languageSettings.text("Apple security fallback 허용")
-        credentialFallbackItem.target = self
-        menu.addItem(credentialFallbackItem)
+        if usageSource == .claude {
+            menu.addItem(withTitle: languageSettings.text("Claude Code 로그인"), action: #selector(login), keyEquivalent: "").target = self
+            credentialFallbackItem.title = languageSettings.text("Apple security fallback 허용")
+            credentialFallbackItem.target = self
+            menu.addItem(credentialFallbackItem)
+        }
         loginItem.target = self
         menu.addItem(loginItem)
         menu.addItem(.separator())
@@ -230,6 +241,15 @@ final class PetPanelController: NSObject, NSMenuDelegate {
     }
 
     @objc private func refresh() { onRefresh?() }
+
+    @objc private func selectUsageSource(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let source = UsageSource(rawValue: rawValue), source != usageSource else { return }
+        usageSource = source
+        source.save()
+        configureMenu()
+        onUsageSourceChanged?(source)
+    }
 
     @objc private func selectRefreshInterval(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? Int,

@@ -1,6 +1,6 @@
 <img width="610" height="121" alt="TokenPet" src="https://github.com/user-attachments/assets/8d8587dc-5929-4cf8-b1e0-88d39984f969" />
 
-Claude Code의 5시간 사용량 한도에서 남은 비율을 애니메이션 캐릭터로 표시하는 macOS 상주 위젯입니다.
+Claude Code 또는 Codex 사용량에서 남은 비율을 애니메이션 캐릭터로 표시하는 macOS 상주 위젯입니다.
 
 [English README](README.md)
 
@@ -41,6 +41,10 @@ brew upgrade --cask tokenpet
 - 우클릭: 새로고침, 위치 초기화, 캐릭터 전환·관리, Claude Code 로그인, 로그인 시 실행, 언어 전환, 종료
 - `72%`: 5시간 사용량 한도에서 72%가 남았다는 뜻
 - `!`: 네트워크 오류로 마지막 정상 사용량을 표시 중이라는 뜻
+
+### Codex 사용량
+
+**사용량 제공자 → Codex**를 선택하세요. TokenPet이 로컬 Codex App Server를 통해 현재 ChatGPT Codex 한도를 자동으로 읽고 설정된 간격마다 갱신합니다. Codex CLI가 설치되어 있고 ChatGPT 계정으로 로그인되어 있어야 합니다.
 
 ### 캐릭터
 

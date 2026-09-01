@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             credentials: ClaudeKeychainStore(),
             transport: URLSessionUsageTransport()
         ),
+        codexService: CodexAppServerUsageService(),
         refreshInterval: refreshInterval.timeInterval
     )
     private lazy var characterStore = CharacterStore(
@@ -55,6 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController.onLanguageChanged = { [weak characterEditorController] in
             characterEditorController?.updateLanguage()
         }
+        panelController.onUsageSourceChanged = { [weak self] source in
+            self?.usageController.setSource(source)
+        }
         panelController.show()
 
         usageController.onStateChange = { [weak panelController] state in
@@ -64,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         panelController.update(state: usageController.state)
-        usageController.start()
+        usageController.start(source: UsageSource.load())
         if let errorMessage = loginItemManager.enableOnFirstLaunch() {
             panelController.presentMenuError(errorMessage)
         }

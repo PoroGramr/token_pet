@@ -9,7 +9,10 @@ final class UsageController: NSObject {
     }
 
     private let service: AnthropicUsageService
-    private var stateMachine = UsageStateMachine()
+    private let codexService: any CodexUsageFetching
+    private var claudeStateMachine = UsageStateMachine()
+    private var codexStateMachine = UsageStateMachine()
+    private var source: UsageSource = .claude
     private var refreshTimer: Timer?
     private var refreshInterval: TimeInterval
     private var loginTimer: Timer?
@@ -17,21 +20,30 @@ final class UsageController: NSObject {
     private var lastRequestStartedAt: Date?
     private var nextAllowedRefreshAt: Date?
     private var loginAttempts = 0
+    private var fetchGeneration = 0
 
     private(set) var state: UsageDisplayState = .loading {
         didSet { onStateChange?(state) }
     }
     var onStateChange: ((UsageDisplayState) -> Void)?
 
-    init(service: AnthropicUsageService, refreshInterval: TimeInterval = RefreshInterval.fiveMinutes.timeInterval) {
+    init(
+        service: AnthropicUsageService,
+        codexService: any CodexUsageFetching,
+        refreshInterval: TimeInterval = RefreshInterval.fiveMinutes.timeInterval
+    ) {
         self.service = service
+        self.codexService = codexService
         self.refreshInterval = refreshInterval
         super.init()
     }
 
-    func start() {
+    func start(source: UsageSource) {
+        self.source = source
         refresh(manual: false)
-        scheduleRefreshTimer()
+        if refreshTimer == nil {
+            scheduleRefreshTimer()
+        }
     }
 
     func setRefreshInterval(_ interval: TimeInterval) {
@@ -52,6 +64,23 @@ final class UsageController: NSObject {
         refreshTimer?.invalidate()
         loginTimer?.invalidate()
         refreshTask?.cancel()
+        fetchGeneration += 1
+        refreshTimer = nil
+        loginTimer = nil
+        refreshTask = nil
+    }
+
+    func setSource(_ source: UsageSource) {
+        guard self.source != source else { return }
+        refreshTask?.cancel()
+        fetchGeneration += 1
+        refreshTask = nil
+        loginTimer?.invalidate()
+        loginTimer = nil
+        nextAllowedRefreshAt = nil
+        self.source = source
+        state = .loading
+        refresh(manual: false)
     }
 
     func refresh(manual: Bool) {
@@ -60,42 +89,75 @@ final class UsageController: NSObject {
 
     private func startFetch(_ kind: FetchKind, manual: Bool) {
         guard refreshTask == nil else { return }
-        if let nextAllowedRefreshAt, nextAllowedRefreshAt > Date() { return }
+        if source == .claude, let nextAllowedRefreshAt, nextAllowedRefreshAt > Date() { return }
         if manual, let lastRequestStartedAt, Date().timeIntervalSince(lastRequestStartedAt) < 10 {
             return
         }
         lastRequestStartedAt = Date()
+        fetchGeneration += 1
+        let generation = fetchGeneration
+        let requestedSource = source
         refreshTask = Task { [weak self] in
             guard let self else { return }
-            defer { refreshTask = nil }
+            defer {
+                if fetchGeneration == generation {
+                    refreshTask = nil
+                }
+            }
             do {
                 let snapshot: UsageSnapshot?
-                switch kind {
-                case .current:
-                    snapshot = try await service.fetchUsage()
-                case .credentialsChanged:
-                    snapshot = try await service.fetchUsageIfCredentialsChanged()
+                switch requestedSource {
+                case .claude:
+                    switch kind {
+                    case .current:
+                        snapshot = try await service.fetchUsage()
+                    case .credentialsChanged:
+                        snapshot = try await service.fetchUsageIfCredentialsChanged()
+                    }
+                case .codex:
+                    switch kind {
+                    case .current:
+                        snapshot = try await codexService.fetchUsage(now: Date())
+                    case .credentialsChanged:
+                        return
+                    }
                 }
-                guard let snapshot else { return }
-                state = stateMachine.receive(snapshot)
-                loginTimer?.invalidate()
-                loginTimer = nil
+                guard !Task.isCancelled, fetchGeneration == generation, source == requestedSource,
+                      let snapshot else { return }
+                switch requestedSource {
+                case .claude:
+                    state = claudeStateMachine.receive(snapshot)
+                    loginTimer?.invalidate()
+                    loginTimer = nil
+                case .codex:
+                    state = codexStateMachine.receive(snapshot)
+                }
             } catch let error as UsageClientError {
-                handle(error)
+                guard !Task.isCancelled, fetchGeneration == generation, source == requestedSource else { return }
+                handleClaude(error)
+            } catch let error as CodexUsageFetchError {
+                guard !Task.isCancelled, fetchGeneration == generation, source == requestedSource else { return }
+                state = codexStateMachine.fail(message: error.statusMessage)
             } catch {
-                handle(.network)
+                guard !Task.isCancelled, fetchGeneration == generation, source == requestedSource else { return }
+                if requestedSource == .claude {
+                    handleClaude(.network)
+                } else {
+                    state = codexStateMachine.fail(message: "Codex 사용량을 불러오지 못했습니다")
+                }
             }
         }
     }
 
-    private func handle(_ error: UsageClientError) {
+    private func handleClaude(_ error: UsageClientError) {
         if case .rateLimited(let retryAfter) = error {
             nextAllowedRefreshAt = Date().addingTimeInterval(retryAfter ?? 300)
         }
-        state = stateMachine.fail(error)
+        state = claudeStateMachine.fail(error)
     }
 
     func beginLoginMonitoring() {
+        guard source == .claude else { return }
         loginTimer?.invalidate()
         loginAttempts = 0
         let timer = Timer(timeInterval: 10, target: self, selector: #selector(pollForLogin), userInfo: nil, repeats: true)

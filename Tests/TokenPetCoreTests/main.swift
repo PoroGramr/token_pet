@@ -69,6 +69,40 @@ private func testClampsRemainingPercent() {
 }
 
 @MainActor
+private func testParsesCodexAppServerRateLimits() throws {
+    let output = Data("""
+    {"id":0,"result":{"userAgent":"token_pet"}}
+    {"id":6,"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":13,"windowDurationMins":10080,"resetsAt":1788755869}}}}
+    """.utf8)
+
+    let snapshot = try CodexAppServerResponseParser.parse(
+        output: output,
+        requestID: 6,
+        fetchedAt: Date(timeIntervalSince1970: 100)
+    )
+
+    runner.expectEqual(snapshot.remainingPercent, 87, "Codex App Server remaining percent")
+    runner.expectEqual(snapshot.resetsAt, Date(timeIntervalSince1970: 1_788_755_869), "Codex reset timestamp")
+    runner.expectEqual(snapshot.fetchedAt, Date(timeIntervalSince1970: 100), "Codex fetch timestamp")
+}
+
+@MainActor
+private func testBuildsCodexAppServerHandshakeAndRateLimitRequest() throws {
+    let data = CodexAppServerRequestFactory.make(clientVersion: "0.2.0", requestID: 6)
+    let lines = String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init)
+    let messages = try lines.map {
+        try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any]
+    }
+
+    runner.expectEqual(lines.count, 3, "Codex App Server request line count")
+    runner.expectEqual(messages[0]["method"] as? String, "initialize", "Codex initialize request")
+    runner.expectTrue(lines[0].contains(#""name":"token_pet""#), "Codex client identity")
+    runner.expectEqual(messages[1]["method"] as? String, "initialized", "Codex initialized notification")
+    runner.expectEqual(messages[2]["method"] as? String, "account/rateLimits/read", "Codex rate limits request")
+    runner.expectEqual((messages[2]["id"] as? NSNumber)?.intValue, 6, "Codex rate limits request id")
+}
+
+@MainActor
 private func testBuildsAuthenticatedUsageRequest() throws {
     let request = try UsageRequestFactory.make(accessToken: "secret-token")
 
@@ -965,6 +999,8 @@ private func testScreenshotCharacterIsUprightIfRequested() throws {
 do {
     try testDecodesFiveHourUsageAndCalculatesRemainingPercent()
     testClampsRemainingPercent()
+    try testParsesCodexAppServerRateLimits()
+    try testBuildsCodexAppServerHandshakeAndRateLimitRequest()
     try testBuildsAuthenticatedUsageRequest()
     try testParsesUsageAndRecognizesHTTPFailures()
     testKeepsLastValueWhenRefreshFails()
