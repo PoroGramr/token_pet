@@ -1,10 +1,10 @@
 cask "tokenpet" do
-  version "0.1.1"
-  sha256 "5714d5a047cd836eb7596136a853fed73c5ba41bc601245029aec03a27be766a"
+  version "0.2.0"
+  sha256 "2006a40fc33b0f2b03a1ae1d94e6628c777ff88bbf913188fd1bc2248676c50c"
 
   url "https://raw.githubusercontent.com/PoroGramr/token_pet/v#{version}/releases/TokenPet-#{version}.dmg"
   name "TokenPet"
-  desc "Animated Claude Code usage token pet"
+  desc "Animated Claude Code and Codex usage token pet"
   homepage "https://github.com/PoroGramr/token_pet"
 
   depends_on macos: :sonoma
